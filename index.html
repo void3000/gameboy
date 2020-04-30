@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>GameBoy</title>
+    <style>
+        body {
+            background: #202028;
+            color: #fff;
+            font-family: sans-serif;
+            font-size: 2em;
+            text-align: center;
+        }
+
+        canvas {
+            border: solid .2em #fff;
+            height: 80vh;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="screen" width="160" height="144"></canvas>
+    <script src="src/cpu.js"></script>
+    <script>
+    (function() {
+        REG[A] = 3;
+        REG[B] = 5;
+        REG[H] = 0x20;
+        REG[L] = 0x00;
+
+        mem[0x2000] = 13;
+        mem[0x0000] = 0x7e;
+
+        PC = 0x00;
+        step();
+
+        console.log("[DEBUG] Ld A, B :: A = 0x" + (REG[A]).toString(16) + ", B = 0x" + (REG[B]).toString(16));
+    }());
+    </script>
+</body>
+
+</html>
