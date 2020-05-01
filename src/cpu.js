@@ -20,22 +20,6 @@ var C = 0x00;
 var REG = new Uint8Array(0x08);
 
 // Register index
-//
-// Register identifier has the following notation:
-//
-// 	0x0XYZ
-// where,
-// X is used to identify the register type and has the following notation:
-//
-// 	0b000 - Any single register
-// 	0b001 - AF
-//	0b010 - BC
-//	0b011 - DE
-//	0b100 - HL
-//	0b101 - SP
-//	0b110 - PC
-//
-// YZ are used for indexing
 const A = 0x0001;
 const B = 0x0002;
 const C = 0x0003;
@@ -45,16 +29,13 @@ const F = 0x0006;
 const H = 0x0007;
 const L = 0x0008;
 
-const AF = 0x0000;
-const BC = 0x0000;
-const DE = 0x0000;
-const HL = 0x0000;
-
 // Addressing modes
 const IMMEDIATE_TO_REGISTER = 0x0001;
 const IMMEDIATE_TO_IMMEDIATE= 0x0002;
 const REGISTER_TO_IMMEDIATE = 0X0003;
 const REGISTER_TO_REGISTER  = 0X0004;
+const REGISTER 				= 0x0005;
+const IMMEDIATE				= 0x0006;
 
 function ld_nn_n(nn, n) {
 	return function() {
@@ -163,6 +144,18 @@ function cp_r_n(r, n, mode) {
 			result = REG[r] - mem_read_8b(n);
 		}
 		// Update the flag registers using `result`.
+	}
+}
+
+function inc_n(n, mode) {
+	return function() {
+		if (mode == REGISTER) {
+			REG[n] += 1;
+		}
+		else if (mode == IMMEDIATE) {
+			let result = mem_read_8b(n) + 1;
+			mem_write_8b(n, result);
+		}
 	}
 }
 
@@ -368,6 +361,14 @@ opcode[0xbc] = cp_r_n(A, H, REGISTER_TO_REGISTER);
 opcode[0xbd] = cp_r_n(A, L, REGISTER_TO_REGISTER);
 opcode[0xbe] = cp_r_n(A, read_16b_reg(H, L), IMMEDIATE_TO_REGISTER);
 opcode[0xfe] = cp_r_n(A, PC, IMMEDIATE_TO_REGISTER);
+opcode[0x3c] = inc_n(A, REGISTER);
+opcode[0x04] = inc_n(B, REGISTER);
+opcode[0x0c] = inc_n(C, REGISTER);
+opcode[0x14] = inc_n(D, REGISTER);
+opcode[0x1c] = inc_n(E, REGISTER);
+opcode[0x24] = inc_n(H, REGISTER);
+opcode[0x2c] = inc_n(L, REGISTER);
+opcode[0x34] = inc_n(read_16b_reg(H, L), IMMEDIATE);
 
 function step() {
 	let ins = mem[PC];
