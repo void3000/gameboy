@@ -159,6 +159,18 @@ function inc_n(n, mode) {
 	}
 }
 
+function dec_n(n, mode) {
+	return function() {
+		if (mode == REGISTER) {
+			REG[n] += 1;
+		}
+		else if (mode == IMMEDIATE) {
+			let result = mem_read_8b(n) + 1;
+			mem_write_8b(n, result);
+		}
+	}
+}
+
 // Util functions
 function read_8b_reg(a) {
 	return REG[a];
@@ -369,6 +381,14 @@ opcode[0x1c] = inc_n(E, REGISTER);
 opcode[0x24] = inc_n(H, REGISTER);
 opcode[0x2c] = inc_n(L, REGISTER);
 opcode[0x34] = inc_n(read_16b_reg(H, L), IMMEDIATE);
+opcode[0x3d] = dec_n(A, REGISTER);
+opcode[0x05] = dec_n(B, REGISTER);
+opcode[0x0d] = dec_n(C, REGISTER);
+opcode[0x15] = dec_n(D, REGISTER);
+opcode[0x1d] = dec_n(E, REGISTER);
+opcode[0x25] = dec_n(H, REGISTER);
+opcode[0x2d] = dec_n(L, REGISTER);
+opcode[0x35] = dec_n(read_16b_reg(H, L), IMMEDIATE);
 
 function step() {
 	let ins = mem[PC];
