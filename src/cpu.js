@@ -153,6 +153,19 @@ function xor_r_n(r, n, mode) {
 	}
 }
 
+function cp_r_n(r, n, mode) {
+	return function() {
+		let result = 0;
+		if (mode == REGISTER_TO_REGISTER) {
+			result = REG[r] - REG[n];
+		}
+		else if (mode == IMMEDIATE_TO_REGISTER) {
+			result = REG[r] - mem_read_8b(n);
+		}
+		// Update the flag registers using `result`.
+	}
+}
+
 // Util functions
 function read_8b_reg(a) {
 	return REG[a];
@@ -346,6 +359,15 @@ opcode[0xac] = xor_r_n(A, H, REGISTER_TO_REGISTER);
 opcode[0xad] = xor_r_n(A, L, REGISTER_TO_REGISTER);
 opcode[0xae] = xor_r_n(A, read_16b_reg(H, L), IMMEDIATE_TO_REGISTER);
 opcode[0xee] = xor_r_n(A, PC, IMMEDIATE_TO_REGISTER);
+opcode[0xbf] = cp_r_n(A, A, REGISTER_TO_REGISTER);
+opcode[0xb8] = cp_r_n(A, B, REGISTER_TO_REGISTER);
+opcode[0xb9] = cp_r_n(A, C, REGISTER_TO_REGISTER);
+opcode[0xba] = cp_r_n(A, D, REGISTER_TO_REGISTER);
+opcode[0xbb] = cp_r_n(A, E, REGISTER_TO_REGISTER);
+opcode[0xbc] = cp_r_n(A, H, REGISTER_TO_REGISTER);
+opcode[0xbd] = cp_r_n(A, L, REGISTER_TO_REGISTER);
+opcode[0xbe] = cp_r_n(A, read_16b_reg(H, L), IMMEDIATE_TO_REGISTER);
+opcode[0xfe] = cp_r_n(A, PC, IMMEDIATE_TO_REGISTER);
 
 function step() {
 	let ins = mem[PC];
