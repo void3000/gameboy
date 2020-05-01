@@ -10,6 +10,12 @@ var mem = new Uint8Array(0x10000);
 var PC = 0x0000;
 var SP = 0x0000;
 
+// Register flags 
+var Z = 0x00;
+var N = 0x00;
+var H = 0x00;
+var C = 0x00;
+
 // Registers
 var REG = new Uint8Array(0x08);
 
@@ -91,6 +97,17 @@ function pop_nn(h, l) {
 		REG[h] = ((nn >> 8) & 0xff);
 	}
 }
+
+function add_r_n(r, n, carry, mode) {
+	return function() {
+		if (mode == REGISTER_TO_REGISTER) {
+			REG[r] += REG[n] + (carry ? C : 0);
+		}
+		else if (mode == IMMEDIATE_TO_REGISTER) {
+			REG[r] += mem_read_8b(n) + (carry ? C : 0);
+		}
+	}
+}	
 
 // Util functions
 function read_8b_reg(a) {
@@ -223,6 +240,24 @@ opcode[0xf1] = pop_nn(A, F);
 opcode[0xc1] = pop_nn(B, C);
 opcode[0xd1] = pop_nn(D, E);
 opcode[0xe1] = pop_nn(H, L);
+opcode[0x87] = add_r_n(A, A, false, REGISTER_TO_REGISTER);
+opcode[0x80] = add_r_n(A, B, false, REGISTER_TO_REGISTER);
+opcode[0x81] = add_r_n(A, C, false, REGISTER_TO_REGISTER);
+opcode[0x82] = add_r_n(A, D, false, REGISTER_TO_REGISTER);
+opcode[0x83] = add_r_n(A, E, false, REGISTER_TO_REGISTER);
+opcode[0x84] = add_r_n(A, H, false, REGISTER_TO_REGISTER);
+opcode[0x85] = add_r_n(A, L, false, REGISTER_TO_REGISTER);
+opcode[0x86] = add_r_n(A, read_16b_reg(H, L), false, IMMEDIATE_TO_REGISTER);
+opcode[0xc6] = add_r_n(A, PC, false, IMMEDIATE_TO_REGISTER);
+opcode[0x8f] = add_r_n(A, A, true, REGISTER_TO_REGISTER);
+opcode[0x88] = add_r_n(A, B, true, REGISTER_TO_REGISTER);
+opcode[0x89] = add_r_n(A, C, true, REGISTER_TO_REGISTER);
+opcode[0x8a] = add_r_n(A, D, true, REGISTER_TO_REGISTER);
+opcode[0x8b] = add_r_n(A, E, true, REGISTER_TO_REGISTER);
+opcode[0x8c] = add_r_n(A, H, true, REGISTER_TO_REGISTER);
+opcode[0x8d] = add_r_n(A, L, true, REGISTER_TO_REGISTER);
+opcode[0x8e] = add_r_n(A, read_16b_reg(H, L), true, IMMEDIATE_TO_REGISTER);
+opcode[0xce] = add_r_n(A, PC, true, IMMEDIATE_TO_REGISTER);
 
 function step() {
 	let ins = mem[PC];
