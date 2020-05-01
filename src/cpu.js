@@ -80,6 +80,18 @@ function ld_rr_nn(h, l, nn) {
 	}
 }
 
+function push_nn(h, l) {
+	mem_write_16b(SP, read_16b_reg(h, l));
+}
+
+function pop_nn(h, l) {
+	return function() {
+		let nn = mem_read_16b(SP);
+		REG[l] = (nn & 0xff);
+		REG[h] = ((nn >> 8) & 0xff);
+	}
+}
+
 // Util functions
 function read_8b_reg(a) {
 	return REG[a];
@@ -203,6 +215,14 @@ opcode[0x31] = function() { SP = mem_read_16b(PC); }
 opcode[0xf9] = function() { SP = read_16b_reg(H, L); }
 opcode[0xf8] = function() { let nn = SP + mem_read_8b(PC); ld_rr_nn(H, L, nn); }
 opcode[0x08] = function() { mem_write_16b(PC, SP); }
+opcode[0xf5] = push_nn(A, F);
+opcode[0xc5] = push_nn(B, C);
+opcode[0xd5] = push_nn(D, E);
+opcode[0xe5] = push_nn(H, L);
+opcode[0xf1] = pop_nn(A, F);
+opcode[0xc1] = pop_nn(B, C);
+opcode[0xd1] = pop_nn(D, E);
+opcode[0xe1] = pop_nn(H, L);
 
 function step() {
 	let ins = mem[PC];
