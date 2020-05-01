@@ -8,6 +8,7 @@ var mem = new Uint8Array(0x10000);
 
 // GameBoy CPU components
 var PC = 0x0000;
+var SP = 0x0000;
 
 // Registers
 var REG = new Uint8Array(0x08);
@@ -69,9 +70,13 @@ function ld_r1_r2(r1, r2, mode) {
 		else if (mode == IMMEDIATE_TO_IMMEDIATE) {
 			mem_write_8b(r1, mem_read_8b(r2));
 		}
-		else {
-			console.log("Invalid mode.");
-		}
+	}
+}
+
+function ld_rr_nn(h, l, nn) {
+	return function() {
+		REG[l] = (nn & 0xff);
+		REG[h] = ((nn >> 8) & 0xff);
 	}
 }
 
@@ -94,6 +99,11 @@ function mem_write_8b(addr, data) {
 
 function mem_read_16b(addr) {
 	return ((mem[(++addr)] << 8) | mem[addr]) & 0xffff;
+}
+
+function mem_write_16b(addr, data) {
+	mem[addr] = (data & 0xff);
+	mem[++addr] = ((data >> 8) & 0xff);
 }
 
 // operation code mapping
@@ -184,6 +194,15 @@ opcode[0x77] = ld_r1_r2(read_16b_reg(H, L), A, REGISTER_TO_IMMEDIATE);
 opcode[0xea] = ld_r1_r2(mem_read_16b(PC), A, REGISTER_TO_IMMEDIATE);
 opcode[0xf2] = ld_r1_r2(A, ( 0xff00 + read_8b_reg(C)), IMMEDIATE_TO_REGISTER);
 opcode[0xe2] = ld_r1_r2((0xff00 + read_8b_reg(C)), A, REGISTER_TO_IMMEDIATE);
+opcode[0xe0] = ld_r1_r2((0xff00 + mem_read_8b(PC)), A, REGISTER_TO_IMMEDIATE);
+opcode[0xf0] = ld_r1_r2(A, (0xff00 + mem_read_8b(PC)), IMMEDIATE_TO_REGISTER);
+opcode[0x01] = ld_rr_nn(B, C, mem_read_16b(PC), IMMEDIATE_TO_REGISTER);
+opcode[0x11] = ld_r1_r2(D, E, mem_read_16b(PC), IMMEDIATE_TO_REGISTER);
+opcode[0x21] = ld_r1_r2(H, L, mem_read_16b(PC), IMMEDIATE_TO_REGISTER);
+opcode[0x31] = function() { SP = mem_read_16b(PC); }
+opcode[0xf9] = function() { SP = read_16b_reg(H, L); }
+opcode[0xf8] = function() { let nn = SP + mem_read_8b(PC); ld_rr_nn(H, L, nn); }
+opcode[0x08] = function() { mem_write_16b(PC, SP); }
 
 function step() {
 	let ins = mem[PC];
