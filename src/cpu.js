@@ -142,6 +142,17 @@ function or_r_n(r, n, mode) {
 	}
 }
 
+function xor_r_n(r, n, mode) {
+	return function() {
+		if (mode == REGISTER_TO_REGISTER) {
+			REG[r] ^= REG[n];
+		}
+		else if (mode == IMMEDIATE_TO_REGISTER) {
+			REG[r] ^= mem_read_8b(n);
+		}
+	}
+}
+
 // Util functions
 function read_8b_reg(a) {
 	return REG[a];
@@ -316,7 +327,7 @@ opcode[0xa3] = and_r_n(A, E, REGISTER_TO_REGISTER);
 opcode[0xa4] = and_r_n(A, H, REGISTER_TO_REGISTER);
 opcode[0xa5] = and_r_n(A, L, REGISTER_TO_REGISTER);
 opcode[0xa6] = and_r_n(A, read_16b_reg(H, L), IMMEDIATE_TO_REGISTER);
-opcode[0xe6] = or_r_n(A, PC, IMMEDIATE_TO_REGISTER);
+opcode[0xe6] = and_r_n(A, PC, IMMEDIATE_TO_REGISTER);
 opcode[0xb7] = or_r_n(A, A, REGISTER_TO_REGISTER);
 opcode[0xb0] = or_r_n(A, B, REGISTER_TO_REGISTER);
 opcode[0xb1] = or_r_n(A, C, REGISTER_TO_REGISTER);
@@ -326,6 +337,15 @@ opcode[0xb4] = or_r_n(A, H, REGISTER_TO_REGISTER);
 opcode[0xb5] = or_r_n(A, L, REGISTER_TO_REGISTER);
 opcode[0xb6] = or_r_n(A, read_16b_reg(H, L), IMMEDIATE_TO_REGISTER);
 opcode[0xf6] = or_r_n(A, PC, IMMEDIATE_TO_REGISTER);
+opcode[0xaf] = xor_r_n(A, A, REGISTER_TO_REGISTER);
+opcode[0xa8] = xor_r_n(A, B, REGISTER_TO_REGISTER);
+opcode[0xa9] = xor_r_n(A, C, REGISTER_TO_REGISTER);
+opcode[0xaa] = xor_r_n(A, D, REGISTER_TO_REGISTER);
+opcode[0xab] = xor_r_n(A, E, REGISTER_TO_REGISTER);
+opcode[0xac] = xor_r_n(A, H, REGISTER_TO_REGISTER);
+opcode[0xad] = xor_r_n(A, L, REGISTER_TO_REGISTER);
+opcode[0xae] = xor_r_n(A, read_16b_reg(H, L), IMMEDIATE_TO_REGISTER);
+opcode[0xee] = xor_r_n(A, PC, IMMEDIATE_TO_REGISTER);
 
 function step() {
 	let ins = mem[PC];
