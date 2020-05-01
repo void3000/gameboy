@@ -109,6 +109,17 @@ function add_r_n(r, n, carry, mode) {
 	}
 }	
 
+function sub_r_n(r, n, carry, mode) {
+	return function() {
+		if (mode == REGISTER_TO_REGISTER) {
+			REG[r] -= REG + (carry ? C : 0);
+		}
+		else if (mode == IMMEDIATE_TO_REGISTER) {
+			REG[r] -= mem_read_8b(n) + (carry ? C : 0);
+		}
+	}
+}
+
 // Util functions
 function read_8b_reg(a) {
 	return REG[a];
@@ -258,6 +269,23 @@ opcode[0x8c] = add_r_n(A, H, true, REGISTER_TO_REGISTER);
 opcode[0x8d] = add_r_n(A, L, true, REGISTER_TO_REGISTER);
 opcode[0x8e] = add_r_n(A, read_16b_reg(H, L), true, IMMEDIATE_TO_REGISTER);
 opcode[0xce] = add_r_n(A, PC, true, IMMEDIATE_TO_REGISTER);
+opcode[0x97] = sub_r_n(A, A, false, REGISTER_TO_REGISTER);
+opcode[0x90] = sub_r_n(A, B, false, REGISTER_TO_REGISTER);
+opcode[0x91] = sub_r_n(A, C, false, REGISTER_TO_REGISTER);
+opcode[0x92] = sub_r_n(A, D, false, REGISTER_TO_REGISTER);
+opcode[0x93] = sub_r_n(A, E, false, REGISTER_TO_REGISTER);
+opcode[0x94] = sub_r_n(A, H, false, REGISTER_TO_REGISTER);
+opcode[0x95] = sub_r_n(A, L, false, REGISTER_TO_REGISTER);
+opcode[0x96] = sub_r_n(A, read_16b_reg(H, L), false, IMMEDIATE_TO_REGISTER);
+opcode[0xd6] = sub_r_n(A, PC, false, IMMEDIATE_TO_REGISTER);
+opcode[0x9f] = sub_r_n(A, A, true, REGISTER_TO_REGISTER);
+opcode[0x98] = sub_r_n(A, B, true, REGISTER_TO_REGISTER);
+opcode[0x99] = sub_r_n(A, C, true, REGISTER_TO_REGISTER);
+opcode[0x9a] = sub_r_n(A, D, true, REGISTER_TO_REGISTER);
+opcode[0x9b] = sub_r_n(A, E, true, REGISTER_TO_REGISTER);
+opcode[0x9c] = sub_r_n(A, H, true, REGISTER_TO_REGISTER);
+opcode[0x9d] = sub_r_n(A, L, true, REGISTER_TO_REGISTER);
+opcode[0x9e] = sub_r_n(A, read_16b_reg(H, L), true, IMMEDIATE_TO_REGISTER);
 
 function step() {
 	let ins = mem[PC];
