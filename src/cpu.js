@@ -181,6 +181,16 @@ function add_rr_n(r1h, r1l, r2h, r2l, mode) {
 	}
 }
 
+function inc_nn(h, l) {
+	return function() {
+		let ll = REG[l] + 1;
+		let hh = REG[h] + (ll > 0xff ? 1 : 0);
+
+		REG[L] = ll & 0xff;
+		REG[H] = hh & 0xff;
+	}
+}
+
 // Util functions
 function read_8b_reg(a) {
 	return REG[a];
@@ -410,8 +420,12 @@ opcode[0x39] = function() {
 	REG[H] = hh & 0xff;
  };
  opcode[0xe8] = function() { SP += mem_read_8b(PC); };
+ opcode[0x03] = inc_nn(B, C);
+ opcode[0x13] = inc_nn(D, E);
+ opcode[0x23] = inc_nn(H, L);
+ opcode[0x33] = function() { SP += 1; }
 
-function step()
+function step() {
 	let ins = mem[PC];
 	opcode[ins]();
 	PC++;
