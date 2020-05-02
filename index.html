@@ -24,18 +24,20 @@
     <script src="src/cpu.js"></script>
     <script>
     (function() {
-        REG[A] = 3;
-        REG[B] = 5;
-        REG[H] = 0x20;
-        REG[L] = 0x00;
+        // Test
+        REG[B] = 0x00;
+        REG[C] = 0xf5;
+        REG[H] = 0x00;
+        REG[L] = 0x0f;
 
-        mem[0x2000] = 13;
-        mem[0x0000] = 0x7e;
-
+        mem[0x0000] = 0x39;
+ 
         PC = 0x00;
+        SP = 0x00f5;
         step();
 
-        console.log("[DEBUG] Ld A, B :: A = 0x" + (REG[A]).toString(16) + ", B = 0x" + (REG[B]).toString(16));
+        // Expected 0x0104
+        console.log("[DEBUG] ADD HL, BC :: HL = 0x" + ((REG[H] << 8) | REG[L]).toString(16));
     }());
     </script>
 </body>

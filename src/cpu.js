@@ -11,23 +11,23 @@ var PC = 0x0000;
 var SP = 0x0000;
 
 // Register flags 
-var Z = 0x00;
-var N = 0x00;
-var H = 0x00;
-var C = 0x00;
+var Z_flag = 0x00;
+var N_flag = 0x00;
+var H_flag = 0x00;
+var C_flag = 0x00;
 
 // Registers
 var REG = new Uint8Array(0x08);
 
 // Register index
-const A = 0x0001;
-const B = 0x0002;
-const C = 0x0003;
-const D = 0x0004;
-const E = 0x0005;
-const F = 0x0006;
-const H = 0x0007;
-const L = 0x0008;
+const A = 0x0000;
+const B = 0x0001;
+const C = 0x0002;
+const D = 0x0003;
+const E = 0x0004;
+const F = 0x0005;
+const H = 0x0006;
+const L = 0x0007;
 
 // Addressing modes
 const IMMEDIATE_TO_REGISTER = 0x0001;
@@ -168,6 +168,16 @@ function dec_n(n, mode) {
 			let result = mem_read_8b(n) + 1;
 			mem_write_8b(n, result);
 		}
+	}
+}
+
+function add_rr_n(r1h, r1l, r2h, r2l, mode) {
+	return function() {
+		let ll = REG[r1l] + REG[r2l];
+		let hh = REG[r1h] + REG[r2h] + (ll > 0xff ? 1 : 0);
+		
+		REG[r1l] = ll & 0xff;
+		REG[r1h] = hh & 0xff;
 	}
 }
 
@@ -389,8 +399,19 @@ opcode[0x1d] = dec_n(E, REGISTER);
 opcode[0x25] = dec_n(H, REGISTER);
 opcode[0x2d] = dec_n(L, REGISTER);
 opcode[0x35] = dec_n(read_16b_reg(H, L), IMMEDIATE);
+opcode[0x09] = add_rr_n(H, L, B, C, REGISTER_TO_REGISTER);
+opcode[0x19] = add_rr_n(H, L, D, E, REGISTER_TO_REGISTER);
+opcode[0x29] = add_rr_n(H, L, H, L, REGISTER_TO_REGISTER);
+opcode[0x39] = function() {
+	let ll = REG[L] + (SP & 0xff);
+	let hh = REG[H] + ((SP >> 8) & 0xff) + (ll > 0xff ? 1 : 0);
+	
+	REG[L] = ll & 0xff;
+	REG[H] = hh & 0xff;
+ };
+ opcode[0xe8] = function() { SP += mem_read_8b(PC); };
 
-function step() {
+function step()
 	let ins = mem[PC];
 	opcode[ins]();
 	PC++;
