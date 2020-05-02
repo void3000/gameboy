@@ -27,11 +27,11 @@
         // Test
         REG[B] = 0x00;
         REG[C] = 0xf5;
-        REG[H] = 0x0f;
-        REG[L] = 0xff;
+        REG[H] = 0xff;
+        REG[L] = 0x00;
 
-        mem[0x0000] = 0x23;
-        mem[0x0001] = 0x23;
+        mem[0x0000] = 0x2b;
+        mem[0x0001] = 0x2b;
  
         PC = 0x00;
         SP = 0x00f5;
