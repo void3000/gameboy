@@ -376,6 +376,24 @@ static void rra(struct emulator_t *emulator)
     cpu->reg.af.high = results;
 }
 
+static void rlc_n(struct emulator_t *emulator)
+{
+    struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
+
+    uint8_t data = read_8_bit_immediate_data_from_memory(emulator);
+    uint8_t r = data & 0x07;
+
+    uint8_t bit_data = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
+    uint8_t results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) << 1) | bit_data;
+
+    cpu->flags.z_flag = results == 0;
+    cpu->flags.c_flag = bit_data;
+    cpu->flags.n_flag = 0;
+    cpu->flags.h_flag = 0;
+
+    *(cpu->reg.cpu_8_bit_reg_mapping[r]) = results;
+}
+
 static void emulator_initialize(struct emulator_t *emulator)
 {
     // Initialize CPU registers and flags.
@@ -608,6 +626,9 @@ void step_emulator(struct emulator_t *emulator)
         case 0x1f:
             rra(emulator);
             break;
+        case 0xcb:  // RLC r'
+            rlc_n(emulator);
+            break;
         default:
             break;
     }
@@ -654,7 +675,10 @@ int main(int argc, char *argv[])
     emulator.memory.blocks[12]      = 0x17;     // rla
     emulator.memory.blocks[13]      = 0x0f;     // rrca
     emulator.memory.blocks[14]      = 0x1f;     // rra
+    emulator.memory.blocks[15]      = 0xcb;     // rlc a
+    emulator.memory.blocks[16]      = 0x07;     // register = 0x07
 
+    step_emulator(&emulator);
     step_emulator(&emulator);
     step_emulator(&emulator);
     step_emulator(&emulator);
