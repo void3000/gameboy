@@ -366,7 +366,7 @@ static void rra(struct emulator_t *emulator)
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t bit_data = (cpu->reg.af.high & 0x01) != 0;
-    uint8_t results  = (cpu->reg.af.high >> 1) | (bit_data << 0x07);
+    uint8_t results  = (cpu->reg.af.high >> 1) | (cpu->flags.c_flag << 0x07);
 
     cpu->flags.z_flag = results == 0;
     cpu->flags.c_flag = bit_data;
@@ -376,15 +376,40 @@ static void rra(struct emulator_t *emulator)
     cpu->reg.af.high = results;
 }
 
-static void rlc_n(struct emulator_t *emulator)
+static void rotation_operations(struct emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t data = read_8_bit_immediate_data_from_memory(emulator);
     uint8_t r = data & 0x07;
+    uint8_t results;
+    uint8_t bit_data;
 
-    uint8_t bit_data = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
-    uint8_t results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) << 1) | bit_data;
+    // Skipped rlc (hl) instruction
+    switch(data)
+    {
+        case 0x00 ... 0x05:  // RLC r'
+        {
+            bit_data = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
+            results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) << 1) | bit_data;
+        }
+        case 0x10 ... 0x15: // RL r' 
+        {
+            results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) << 1) | cpu->flags.c_flag;
+            bit_data = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
+            break;
+        }
+        case 0x08 ... 0x0d:  // RRC r'
+        {
+            bit_data = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
+            results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) | (bit_data << 0x07);
+        }
+        case 0x18 ... 0x1d:  // RR  r'
+        {
+            bit_data = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
+            results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) | (cpu->flags.c_flag << 0x07);
+        }
+    }
 
     cpu->flags.z_flag = results == 0;
     cpu->flags.c_flag = bit_data;
@@ -511,42 +536,50 @@ void step_emulator(struct emulator_t *emulator)
         case 0x1a:
             load_r_immediate_data(emulator, 0x07, emulator->cpu.reg.de.data);
             break;
-        case 0xf2: {
+        case 0xf2: 
+        {
             uint16_t addr = 0xff00 + emulator->cpu.reg.bc.low;
             load_r_immediate_data(emulator, 0x07, addr);
             break;
         }
-        case 0xe2: {
+        case 0xe2: 
+        {
             uint16_t addr = 0xff00 + emulator->cpu.reg.bc.low;
             load_immediate_data_r(emulator, addr, 0x07);
             break;
         }
-        case 0xf0: {
+        case 0xf0: 
+        {
             uint8_t addr = read_8_bit_immediate_data_from_memory(emulator);
             load_r_immediate_data(emulator, 0x07, addr);
             break;
         }
-        case 0xe0: {
+        case 0xe0: 
+        {
             uint8_t addr = read_8_bit_immediate_data_from_memory(emulator);
             load_immediate_data_r(emulator, addr, 0x07);
             break;
         }
-        case 0xfa: {
+        case 0xfa: 
+        {
             uint16_t addr = read_16_bit_immediate_data_from_memory(emulator);
             load_r_immediate_data(emulator, 0x07, addr);
             break;
         }
-        case 0xea: {
+        case 0xea: 
+        {
             uint16_t addr = read_16_bit_immediate_data_from_memory(emulator);
             load_immediate_data_r(emulator, addr, 0x07);
             break;
         }
-        case 0x2a: {
+        case 0x2a: 
+        {
             load_r_immediate_data(emulator, 0x07, emulator->cpu.reg.hl.data);
             emulator->cpu.reg.hl.data = emulator->cpu.reg.hl.data + 1;
             break;
         }
-        case 0x3a: {
+        case 0x3a: 
+        {
             load_r_immediate_data(emulator, 0x07, emulator->cpu.reg.hl.data);
             emulator->cpu.reg.hl.data = emulator->cpu.reg.hl.data - 1;
             break;
@@ -557,12 +590,14 @@ void step_emulator(struct emulator_t *emulator)
         case 0x12:
             load_immediate_data_r(emulator, emulator->cpu.reg.de.data, 0x07);
             break;
-        case 0x22: {
+        case 0x22: 
+        {
             load_immediate_data_r(emulator, emulator->cpu.reg.hl.data, 0x07);
             emulator->cpu.reg.hl.data = emulator->cpu.reg.hl.data + 1;
             break;
         }
-        case 0x32: {
+        case 0x32: 
+        {
             load_immediate_data_r(emulator, emulator->cpu.reg.hl.data, 0x07);
             emulator->cpu.reg.hl.data = emulator->cpu.reg.hl.data - 1;
             break;
@@ -626,8 +661,10 @@ void step_emulator(struct emulator_t *emulator)
         case 0x1f:
             rra(emulator);
             break;
-        case 0xcb:  // RLC r'
-            rlc_n(emulator);
+        case 0xcb:  
+            // RLC r'
+            // RL  r'
+            rotation_operations(emulator);
             break;
         default:
             break;
