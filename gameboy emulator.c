@@ -22,8 +22,8 @@ struct register_t {
     //  +--------------16 bit wide--------------+
     union {
         struct __attribute__((__packed__)) {
-            uint8_t high;
             uint8_t low;
+            uint8_t high;
         };
         uint16_t data;
     };
@@ -81,10 +81,10 @@ struct cpu_core_t {
 struct memory_t {
     union {
         struct __attribute__((__packed__)) {
-            uint8_t ram[RAM_SIZE];
             uint8_t rom[ROM_SIZE];
+            uint8_t ram[RAM_SIZE];
         };
-        uint16_t blocks[MAIN_MEORY_SIZE];
+        uint8_t blocks[MAIN_MEORY_SIZE];
     };
     uint32_t size;
 };
@@ -96,11 +96,32 @@ struct emulator_t {
     struct memory_t memory;
 };
 
+uint8_t boot_rom[0x0100] =
+{
+    // Gameboy Bootstrap ROM - https://gbdev.gg8.se/wiki/articles/Gameboy_Bootstrap_ROM
+    0x31, 0xFE, 0xFF, 0xAF, 0x21, 0xFF, 0x9F, 0x32, 0xCB, 0x7C, 0x20, 0xFB, 0x21, 0x26, 0xFF, 0x0E, 
+    0x11, 0x3E, 0x80, 0x32, 0xE2, 0x0C, 0x3E, 0xF3, 0xE2, 0x32, 0x3E, 0x77, 0x77, 0x3E, 0xFC, 0xE0, 
+    0x47, 0x11, 0x04, 0x01, 0x21, 0x10, 0x80, 0x1A, 0xCD, 0x95, 0x00, 0xCD, 0x96, 0x00, 0x13, 0x7B, 
+    0xFE, 0x34, 0x20, 0xF3, 0x11, 0xD8, 0x00, 0x06, 0x08, 0x1A, 0x13, 0x22, 0x23, 0x05, 0x20, 0xF9, 
+    0x3E, 0x19, 0xEA, 0x10, 0x99, 0x21, 0x2F, 0x99, 0x0E, 0x0C, 0x3D, 0x28, 0x08, 0x32, 0x0D, 0x20,
+    0xF9, 0x2E, 0x0F, 0x18, 0xF3, 0x67, 0x3E, 0x64, 0x57, 0xE0, 0x42, 0x3E, 0x91, 0xE0, 0x40, 0x04, 
+    0x1E, 0x02, 0x0E, 0x0C, 0xF0, 0x44, 0xFE, 0x90, 0x20, 0xFA, 0x0D, 0x20, 0xF7, 0x1D, 0x20, 0xF2, 
+    0x0E, 0x13, 0x24, 0x7C, 0x1E, 0x83, 0xFE, 0x62, 0x28, 0x06, 0x1E, 0xC1, 0xFE, 0x64, 0x20, 0x06, 
+    0x7B, 0xE2, 0x0C, 0x3E, 0x87, 0xE2, 0xF0, 0x42, 0x90, 0xE0, 0x42, 0x15, 0x20, 0xD2, 0x05, 0x20,
+    0x4F, 0x16, 0x20, 0x18, 0xCB, 0x4F, 0x06, 0x04, 0xC5, 0xCB, 0x11, 0x17, 0xC1, 0xCB, 0x11, 0x17, 
+    0x05, 0x20, 0xF5, 0x22, 0x23, 0x22, 0x23, 0xC9, 0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B, 
+    0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D, 0x00, 0x08, 0x11, 0x1F, 0x88, 0x89, 0x00, 0x0E, 
+    0xDC, 0xCC, 0x6E, 0xE6, 0xDD, 0xDD, 0xD9, 0x99, 0xBB, 0xBB, 0x67, 0x63, 0x6E, 0x0E, 0xEC, 0xCC, 
+    0xDD, 0xDC, 0x99, 0x9F, 0xBB, 0xB9, 0x33, 0x3E, 0x3C, 0x42, 0xB9, 0xA5, 0xB9, 0xA5, 0x42, 0x3C, 
+    0x21, 0x04, 0x01, 0x11, 0xA8, 0x00, 0x1A, 0x13, 0xBE, 0x20, 0xFE, 0x23, 0x7D, 0xFE, 0x34, 0x20, 
+    0xF5, 0x06, 0x19, 0x78, 0x86, 0x23, 0x05, 0x20, 0xFB, 0x86, 0x20, 0xFE, 0x3E, 0x01, 0xE0, 0x50
+};
+
 static uint8_t read_8_bit_immediate_data_from_memory(struct emulator_t *emulator) 
 {
     uint16_t addr = emulator->cpu.reg.pc.data;
     emulator->cpu.reg.pc.data = emulator->cpu.reg.pc.data + 1;
-    return (uint8_t) emulator->memory.blocks[addr];
+    return emulator->memory.blocks[addr];
 }
 
 static uint16_t read_16_bit_immediate_data_from_memory(struct emulator_t *emulator) 
@@ -112,7 +133,7 @@ static uint16_t read_16_bit_immediate_data_from_memory(struct emulator_t *emulat
 
 static uint8_t read_8_bit_from_memory(struct emulator_t *emulator, uint16_t addr) 
 {
-    return (uint8_t) emulator->memory.blocks[addr];
+    return emulator->memory.blocks[addr];
 }
 
 static void write_8_bit_to_memory(struct emulator_t *emulator, uint8_t data, uint16_t addr)
@@ -376,14 +397,16 @@ static void rra(struct emulator_t *emulator)
     cpu->reg.af.high = results;
 }
 
-static void rotation_and_shift_operations(struct emulator_t *emulator)
+static void bit_operations(struct emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t data = read_8_bit_immediate_data_from_memory(emulator);
     uint8_t r = data & 0x07;
+    uint8_t save_result = 1;
     uint8_t results;
-    uint8_t carry_bit;
+    uint8_t carry_bit = cpu->flags.c_flag;
+    uint8_t h_flag = cpu->flags.h_flag;
 
     // Skipped rlc (hl) instruction
     switch(data)
@@ -437,6 +460,14 @@ static void rotation_and_shift_operations(struct emulator_t *emulator)
             results = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) & 0xff;
             break;
         }
+        case 0x7c:
+        case 0x40 ... 0x45: // BIT b, r'
+        {
+            uint8_t index = (data >> 0x03 ) & 0x07;
+            results = *(cpu->reg.cpu_8_bit_reg_mapping[r]) & ( 1 << index); 
+            save_result = 0;
+            break;
+        }
         defualt:
             break;
     }
@@ -444,18 +475,47 @@ static void rotation_and_shift_operations(struct emulator_t *emulator)
     cpu->flags.z_flag = results == 0;
     cpu->flags.c_flag = carry_bit;
     cpu->flags.n_flag = 0;
-    cpu->flags.h_flag = 0;
+    cpu->flags.h_flag = h_flag;
 
-    *(cpu->reg.cpu_8_bit_reg_mapping[r]) = results;
+    if (save_result) *(cpu->reg.cpu_8_bit_reg_mapping[r]) = results;
+}
+
+static void ld_rr_nn(struct emulator_t *emulator)
+{
+    uint16_t immediate_data = read_16_bit_immediate_data_from_memory(emulator);
+    struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
+
+    switch (emulator->opcode)
+    {
+        case 0x01:
+                cpu->reg.bc.data = immediate_data;
+                break;
+        case 0x11:
+                cpu->reg.de.data = immediate_data;
+                break;
+        case 0x21:
+                cpu->reg.hl.data = immediate_data;
+                break;
+        case 0x31:
+                cpu->reg.sp.data = immediate_data;
+                break;
+            default:
+                break;
+    }
+}
+
+static void jump_nn(struct emulator_t *emulator, uint16_t addr)
+{
+    emulator->cpu.reg.pc.data = addr;
 }
 
 static void emulator_initialize(struct emulator_t *emulator)
 {
-    // Initialize CPU registers and flags.
+    // Initialize CPU registers and flags. http://bgb.bircd.org/pandocs.htm#powerupsequence
     emulator->cpu.reg.pc.data = 0x0000;
     emulator->cpu.reg.sp.data = 0xfffe;
 #if  defined(GB) || defined(SGB)
-    emulator->cpu.reg.af.data = 0xb001;
+    emulator->cpu.reg.af.data = 0x01b0;
 #else
     #error "[Config] error - unknown emulation platform (either GB or SGB)."
 #endif
@@ -474,9 +534,11 @@ static void emulator_initialize(struct emulator_t *emulator)
     emulator->cpu.reg.cpu_8_bit_reg_mapping[0x06] = NULL;                           // Not mapped
     emulator->cpu.reg.cpu_8_bit_reg_mapping[0x07] = &emulator->cpu.reg.af.high;     // Register A
 
-    // Initialize memory and in-memory registers.
+    // Initialize memory and in-memory registers. http://bgb.bircd.org/pandocs.htm#powerupsequence
     emulator->memory.size = MAIN_MEORY_SIZE;
     memset(emulator->memory.blocks, 0, emulator->memory.size);
+    memcpy(emulator->memory.rom, boot_rom, 0x0100);
+
     emulator->memory.blocks[0xff05] = 0x00;
     emulator->memory.blocks[0xff06] = 0x00;
     emulator->memory.blocks[0xff07] = 0x00;
@@ -518,8 +580,11 @@ static void emulator_initialize(struct emulator_t *emulator)
 void step_emulator(struct emulator_t *emulator)
 {
     emulator->opcode = read_8_bit_immediate_data_from_memory(emulator);
-    switch (emulator->opcode) {
+    printf("[DEBUG] Executing opcode = $%x\n", emulator->opcode);
+    switch (emulator->opcode) 
+    {
         // http://gcc.gnu.org/onlinedocs/gcc/Statements-implementation.html#Statements-implementation
+        // Opcodes - https://gbdev.io/gb-opcodes/optables/
         // 8-bit transer abd input/output instructions
         case 0x7e:
         case 0x46:
@@ -699,15 +764,32 @@ void step_emulator(struct emulator_t *emulator)
             // SLA r'
             // SRA r'
             // SRL r'
-            rotation_and_shift_operations(emulator);
+            // BIT b, r'
+            bit_operations(emulator);
+            break;
+        // Jump instructions
+        case 0xc3:
+            jump_nn(emulator, read_16_bit_immediate_data_from_memory(emulator));
+            break;
+        // 16 bit load instructions
+        case 0x01:
+        case 0x11:
+        case 0x21:
+        case 0x31:
+            ld_rr_nn(emulator);
+            break;
+        case 0xf9:
+            emulator->cpu.reg.sp.data = emulator->cpu.reg.hl.data;
             break;
         default:
+            printf("Instruction $%x not implemented\n", emulator->opcode);
             break;
     }
 }
 
 void dum_cpu_registers(struct emulator_t *emulator)
 {
+    printf("=== Register dumps ===\n");
     printf("A = %2xh,\t",   emulator->cpu.reg.af.high);
     printf("B = %2xh,\t",   emulator->cpu.reg.bc.high);
     printf("D = %2xh,\t",   emulator->cpu.reg.de.high);
@@ -716,67 +798,79 @@ void dum_cpu_registers(struct emulator_t *emulator)
     printf("C = %2xh,\t",   emulator->cpu.reg.bc.low);
     printf("E = %2xh,\t",   emulator->cpu.reg.de.low);
     printf("L = %2xh\n\n",  emulator->cpu.reg.hl.low);
-    printf("PC= %2xh\n\n",  emulator->cpu.reg.pc.data);
+    printf("PC= %2xh,\t",   emulator->cpu.reg.pc.data);
+    printf("SP= %2xh\n\n",  emulator->cpu.reg.sp.data);
     printf("Z = %2xh,\t",   emulator->cpu.flags.z_flag);
     printf("N = %2xh,\t",   emulator->cpu.flags.n_flag);
     printf("H = %2xh,\t",   emulator->cpu.flags.h_flag);
     printf("C = %2xh\n",    emulator->cpu.flags.c_flag);
-
+    printf("=== End ===\n\n");
 }
 
 // SDL2 https://lazyfoo.net/tutorials/SDL/01_hello_SDL/mac/index.php
+// Boot sequence https://knight.sc/reverse%20engineering/2018/11/19/game-boy-boot-sequence.html
 int main(int argc, char *argv[]) 
 {
     struct emulator_t emulator;
 
     emulator_initialize(&emulator);
 
-    emulator.memory.blocks[0]       = 0xfa;     // ld a, (nn)
-    emulator.memory.blocks[1]       = 0x55;
-    emulator.memory.blocks[2]       = 0x77;
-    emulator.memory.blocks[0x7755]  = 0x1e;
-    emulator.memory.blocks[3]       = 0x80;     // add a, b
-    emulator.memory.blocks[4]       = 0x90;     // sub a, b
-    emulator.memory.blocks[5]       = 0xa1;     // and a, c
-    emulator.memory.blocks[6]       = 0xb0;     // or  a, b
-    emulator.memory.blocks[7]       = 0xaf;     // xor a, a
-    emulator.memory.blocks[8]       = 0x3c;     // inc a
-    emulator.memory.blocks[9]       = 0x05;     // dec b
-    emulator.memory.blocks[10]      = 0xb8;     // cp  a, b
-    emulator.memory.blocks[11]      = 0x07;     // rlca
-    emulator.memory.blocks[12]      = 0x17;     // rla
-    emulator.memory.blocks[13]      = 0x0f;     // rrca
-    emulator.memory.blocks[14]      = 0x1f;     // rra
-    emulator.memory.blocks[15]      = 0xcb;     // rlc a
-    emulator.memory.blocks[16]      = 0x07;
-    emulator.memory.blocks[17]      = 0xcb;     // rl  a
-    emulator.memory.blocks[18]      = 0x17;
-    emulator.memory.blocks[19]      = 0xcb;     // rrc a
-    emulator.memory.blocks[20]      = 0x0f;
-    emulator.memory.blocks[21]      = 0xcb;     // rr  a
-    emulator.memory.blocks[22]      = 0x1f;
-    emulator.memory.blocks[23]      = 0xcb;     // sla  a
-    emulator.memory.blocks[24]      = 0x27;
-    emulator.memory.blocks[25]      = 0xcb;     // sra  a
-    emulator.memory.blocks[26]      = 0x2f;
-    emulator.memory.blocks[27]      = 0xcb;     // srl  a
-    emulator.memory.blocks[28]      = 0x3f;
+    // emulator.memory.blocks[0]       = 0xfa;     // ld a, (nn)
+    // emulator.memory.blocks[1]       = 0x55;
+    // emulator.memory.blocks[2]       = 0x77;
+    // emulator.memory.blocks[0x7755]  = 0x1e;
+    // emulator.memory.blocks[3]       = 0x80;     // add a, b
+    // emulator.memory.blocks[4]       = 0x90;     // sub a, b
+    // emulator.memory.blocks[5]       = 0xa1;     // and a, c
+    // emulator.memory.blocks[6]       = 0xb0;     // or  a, b
+    // emulator.memory.blocks[7]       = 0xaf;     // xor a, a
+    // emulator.memory.blocks[8]       = 0x3c;     // inc a
+    // emulator.memory.blocks[9]       = 0x05;     // dec b
+    // emulator.memory.blocks[10]      = 0xb8;     // cp  a, b
+    // emulator.memory.blocks[11]      = 0x07;     // rlca
+    // emulator.memory.blocks[12]      = 0x17;     // rla
+    // emulator.memory.blocks[13]      = 0x0f;     // rrca
+    // emulator.memory.blocks[14]      = 0x1f;     // rra
+    // emulator.memory.blocks[15]      = 0xcb;     // rlc a
+    // emulator.memory.blocks[16]      = 0x07;
+    // emulator.memory.blocks[17]      = 0xcb;     // rl  a
+    // emulator.memory.blocks[18]      = 0x17;
+    // emulator.memory.blocks[19]      = 0xcb;     // rrc a
+    // emulator.memory.blocks[20]      = 0x0f;
+    // emulator.memory.blocks[21]      = 0xcb;     // rr  a
+    // emulator.memory.blocks[22]      = 0x1f;
+    // emulator.memory.blocks[23]      = 0xcb;     // sla a
+    // emulator.memory.blocks[24]      = 0x27;
+    // emulator.memory.blocks[25]      = 0xcb;     // sra a
+    // emulator.memory.blocks[26]      = 0x2f;
+    // emulator.memory.blocks[27]      = 0xcb;     // srl a
+    // emulator.memory.blocks[28]      = 0x3f;
 
-    step_emulator(&emulator);
-    step_emulator(&emulator);
-    step_emulator(&emulator);
-    step_emulator(&emulator);
-    step_emulator(&emulator);
-    step_emulator(&emulator);
-    step_emulator(&emulator);
-    step_emulator(&emulator);
-    step_emulator(&emulator);
-    step_emulator(&emulator);
-    step_emulator(&emulator);
-    step_emulator(&emulator);
-    step_emulator(&emulator);
-    step_emulator(&emulator);
-    step_emulator(&emulator);
+    // dum_cpu_registers(&emulator);
+
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+    // step_emulator(&emulator);
+
+    dum_cpu_registers(&emulator);
+    
     step_emulator(&emulator);
     step_emulator(&emulator);
     step_emulator(&emulator);
@@ -784,5 +878,6 @@ int main(int argc, char *argv[])
     step_emulator(&emulator);
 
     dum_cpu_registers(&emulator);
+
     return 0;
 }
