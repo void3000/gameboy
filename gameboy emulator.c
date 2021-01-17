@@ -320,11 +320,11 @@ static void rlca(struct emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
-    uint8_t bit_data = (cpu->reg.af.high & 0x80) != 0;
-    uint8_t results  = (cpu->reg.af.high << 1) | bit_data;
+    uint8_t carry_bit = (cpu->reg.af.high & 0x80) != 0;
+    uint8_t results  = (cpu->reg.af.high << 1) | carry_bit;
 
     cpu->flags.z_flag = results == 0;
-    cpu->flags.c_flag = bit_data;
+    cpu->flags.c_flag = carry_bit;
     cpu->flags.n_flag = 0;
     cpu->flags.h_flag = 0;
 
@@ -336,10 +336,10 @@ static void rla(struct emulator_t *emulator)
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t results   = (cpu->reg.af.high << 1) | cpu->flags.c_flag;
-    uint8_t bit_data = (cpu->reg.af.high & 0x80) != 0;
+    uint8_t carry_bit = (cpu->reg.af.high & 0x80) != 0;
 
     cpu->flags.z_flag = results == 0;
-    cpu->flags.c_flag = bit_data;
+    cpu->flags.c_flag = carry_bit;
     cpu->flags.n_flag = 0;
     cpu->flags.h_flag = 0;
 
@@ -350,11 +350,11 @@ static void rrca(struct emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
-    uint8_t bit_data = (cpu->reg.af.high & 0x01) != 0;
-    uint8_t results  = (cpu->reg.af.high >> 1) | (bit_data << 0x07);
+    uint8_t carry_bit = (cpu->reg.af.high & 0x01) != 0;
+    uint8_t results  = (cpu->reg.af.high >> 1) | (carry_bit << 0x07);
 
     cpu->flags.z_flag = results == 0;
-    cpu->flags.c_flag = bit_data;
+    cpu->flags.c_flag = carry_bit;
     cpu->flags.n_flag = 0;
     cpu->flags.h_flag = 0;
 
@@ -365,25 +365,25 @@ static void rra(struct emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
-    uint8_t bit_data = (cpu->reg.af.high & 0x01) != 0;
+    uint8_t carry_bit = (cpu->reg.af.high & 0x01) != 0;
     uint8_t results  = (cpu->reg.af.high >> 1) | (cpu->flags.c_flag << 0x07);
 
     cpu->flags.z_flag = results == 0;
-    cpu->flags.c_flag = bit_data;
+    cpu->flags.c_flag = carry_bit;
     cpu->flags.n_flag = 0;
     cpu->flags.h_flag = 0;
 
     cpu->reg.af.high = results;
 }
 
-static void rotation_operations(struct emulator_t *emulator)
+static void rotation_and_shift_operations(struct emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t data = read_8_bit_immediate_data_from_memory(emulator);
     uint8_t r = data & 0x07;
     uint8_t results;
-    uint8_t bit_data;
+    uint8_t carry_bit;
 
     // Skipped rlc (hl) instruction
     switch(data)
@@ -391,34 +391,58 @@ static void rotation_operations(struct emulator_t *emulator)
         case 0x07:
         case 0x00 ... 0x05:  // RLC r'
         {
-            bit_data = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
-            results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) << 1) | bit_data;
+            carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
+            results = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) << 1) | carry_bit;
+            break;
         }
         case 0x17:
         case 0x10 ... 0x15: // RL r' 
         {
             results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) << 1) | cpu->flags.c_flag;
-            bit_data = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
+            carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
             break;
         }
         case 0x0f:
         case 0x08 ... 0x0d:  // RRC r'
         {
-            bit_data = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
-            results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) | (bit_data << 0x07);
+            carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
+            results = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) | (carry_bit << 0x07);
+            break;
         }
         case 0x1f:
         case 0x18 ... 0x1d:  // RR  r'
         {
-            bit_data = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
+            carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
             results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) | (cpu->flags.c_flag << 0x07);
+            break;
+        }
+        case 0x27:
+        case 0x20 ... 0x25: // SLA r'
+        {
+            carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
+            results = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) << 1);
+            break;
+        }
+        case 0x2f:
+        case 0x28 ... 0x2d: // SRA r'
+        {
+            carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
+            results = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) | ((*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80));
+            break;
+        }
+        case 0x3f:
+        case 0x38 ... 0x3d: // SRL r'
+        {
+            carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
+            results = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) & 0xff;
+            break;
         }
         defualt:
             break;
     }
 
     cpu->flags.z_flag = results == 0;
-    cpu->flags.c_flag = bit_data;
+    cpu->flags.c_flag = carry_bit;
     cpu->flags.n_flag = 0;
     cpu->flags.h_flag = 0;
 
@@ -673,7 +697,9 @@ void step_emulator(struct emulator_t *emulator)
             // RRC r'
             // RR  r'
             // SLA r'
-            rotation_operations(emulator);
+            // SRA r'
+            // SRL r'
+            rotation_and_shift_operations(emulator);
             break;
         default:
             break;
@@ -722,8 +748,26 @@ int main(int argc, char *argv[])
     emulator.memory.blocks[13]      = 0x0f;     // rrca
     emulator.memory.blocks[14]      = 0x1f;     // rra
     emulator.memory.blocks[15]      = 0xcb;     // rlc a
-    emulator.memory.blocks[16]      = 0x07;     // register = 0x07
+    emulator.memory.blocks[16]      = 0x07;
+    emulator.memory.blocks[17]      = 0xcb;     // rl  a
+    emulator.memory.blocks[18]      = 0x17;
+    emulator.memory.blocks[19]      = 0xcb;     // rrc a
+    emulator.memory.blocks[20]      = 0x0f;
+    emulator.memory.blocks[21]      = 0xcb;     // rr  a
+    emulator.memory.blocks[22]      = 0x1f;
+    emulator.memory.blocks[23]      = 0xcb;     // sla  a
+    emulator.memory.blocks[24]      = 0x27;
+    emulator.memory.blocks[25]      = 0xcb;     // sra  a
+    emulator.memory.blocks[26]      = 0x2f;
+    emulator.memory.blocks[27]      = 0xcb;     // srl  a
+    emulator.memory.blocks[28]      = 0x3f;
 
+    step_emulator(&emulator);
+    step_emulator(&emulator);
+    step_emulator(&emulator);
+    step_emulator(&emulator);
+    step_emulator(&emulator);
+    step_emulator(&emulator);
     step_emulator(&emulator);
     step_emulator(&emulator);
     step_emulator(&emulator);
