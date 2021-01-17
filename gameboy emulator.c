@@ -388,27 +388,33 @@ static void rotation_operations(struct emulator_t *emulator)
     // Skipped rlc (hl) instruction
     switch(data)
     {
+        case 0x07:
         case 0x00 ... 0x05:  // RLC r'
         {
             bit_data = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
             results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) << 1) | bit_data;
         }
+        case 0x17:
         case 0x10 ... 0x15: // RL r' 
         {
             results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) << 1) | cpu->flags.c_flag;
             bit_data = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
             break;
         }
+        case 0x0f:
         case 0x08 ... 0x0d:  // RRC r'
         {
             bit_data = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
             results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) | (bit_data << 0x07);
         }
+        case 0x1f:
         case 0x18 ... 0x1d:  // RR  r'
         {
             bit_data = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
             results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) | (cpu->flags.c_flag << 0x07);
         }
+        defualt:
+            break;
     }
 
     cpu->flags.z_flag = results == 0;
@@ -655,7 +661,7 @@ void step_emulator(struct emulator_t *emulator)
         case 0x17:
             rla(emulator);
             break;
-        case 0x0f:
+        case 0x0f: 
             rrca(emulator);
             break;
         case 0x1f:
@@ -664,6 +670,9 @@ void step_emulator(struct emulator_t *emulator)
         case 0xcb:  
             // RLC r'
             // RL  r'
+            // RRC r'
+            // RR  r'
+            // SLA r'
             rotation_operations(emulator);
             break;
         default:
