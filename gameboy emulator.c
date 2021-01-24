@@ -1,11 +1,12 @@
 // Copyright 2020. All rights reserved.
 // Author: keorapetse.finger@yahoo.com (Keorapetse Finger)
+//#include <SDL2/SDL.h>   // $ gcc -F /Library/Frameworks "gameboy emulator.c"
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define GB
+#define __GB__
 
 #define ROM_SIZE            0x8000
 #define RAM_SIZE            0x8000
@@ -53,7 +54,14 @@ struct cpu_registers_t {
     //  +-----+-----+-----+-----+-----+-----+-----+-----+
     //  | 000 | 001 | 010 | 011 | 100 | 101 | 110 | 111 |
     //  +-----+-----+-----+-----+-----+-----+-----+-----+
-    uint8_t *cpu_8_bit_reg_mapping[0x08];
+    uint8_t *cpu_8_bit_reg_map[0x08];
+    // Do the same with 16 bit registers.
+    //  +-----+-----+-----+-----+
+    //  |  BC |  DE |  HL |  SP |
+    //  +-----+-----+-----+-----+
+    //  |  00 |  01 |  10 |  11 |
+    //  +-----+-----+-----+-----+
+    uint16_t *cpu_16_bit_reg_map[0x04];
 };
 
 struct __attribute__((__packed__)) cpu_flags_t {
@@ -80,6 +88,24 @@ struct cpu_core_t {
 };
 
 struct memory_t {
+    // Memory Map
+    //
+    // $FFFF 	    Interrupt Enable Flag
+	// $FF80-$FFFE 	Zero Page - 127 bytes
+	// $FF00-$FF7F 	Hardware I/O Registers
+	// $FEA0-$FEFF 	Unusable Memory
+	// $FE00-$FE9F 	OAM - Object Attribute Memory
+	// $E000-$FDFF 	Echo RAM - Reserved, Do Not Use
+	// $D000-$DFFF 	Internal RAM - Bank 1-7 (switchable - CGB only)
+	// $C000-$CFFF 	Internal RAM - Bank 0 (fixed)
+	// $A000-$BFFF 	Cartridge RAM (If Available)
+	// $9C00-$9FFF 	BG Map Data 2
+	// $9800-$9BFF 	BG Map Data 1
+	// $8000-$97FF 	Character RAM
+	// $4000-$7FFF 	Cartridge ROM - Switchable Banks 1-xx
+	// $0150-$3FFF 	Cartridge ROM - Bank 0 (fixed)
+	// $0100-$014F 	Cartridge Header Area
+	// $0000-$00FF 	Restart and Interrupt Vectors
     union {
         struct __attribute__((__packed__)) {
             uint8_t rom[ROM_SIZE];
@@ -90,16 +116,10 @@ struct memory_t {
     uint16_t size;
 };
 
-struct emulator_t {
-    uint8_t opcode;
-
-    struct cpu_core_t cpu;
-    struct memory_t memory;
-};
-
 uint8_t boot_rom[0x0100] =
 {
-    // Gameboy Bootstrap ROM - https://gbdev.gg8.se/wiki/articles/Gameboy_Bootstrap_ROM
+    // Gameboy Bootstrap ROM
+    // For more details: https://gbdev.gg8.se/wiki/articles/Gameboy_Bootstrap_ROM
     0x31, 0xFE, 0xFF, 0xAF, 0x21, 0xFF, 0x9F, 0x32, 0xCB, 0x7C, 0x20, 0xFB, 0x21, 0x26, 0xFF, 0x0E, 
     0x11, 0x3E, 0x80, 0x32, 0xE2, 0x0C, 0x3E, 0xF3, 0xE2, 0x32, 0x3E, 0x77, 0x77, 0x3E, 0xFC, 0xE0, 
     0x47, 0x11, 0x04, 0x01, 0x21, 0x10, 0x80, 0x1A, 0xCD, 0x95, 0x00, 0xCD, 0x96, 0x00, 0x13, 0x7B, 
@@ -118,106 +138,114 @@ uint8_t boot_rom[0x0100] =
     0xF5, 0x06, 0x19, 0x78, 0x86, 0x23, 0x05, 0x20, 0xFB, 0x86, 0x20, 0xFE, 0x3E, 0x01, 0xE0, 0x50
 };
 
-static uint8_t read_8_bit_immediate_data_from_memory(struct emulator_t *emulator) 
+struct gameboy_emulator_t {
+    struct cpu_core_t cpu;
+    struct memory_t memory;
+
+    uint8_t opcode;
+};
+
+static uint8_t read_8_bit_immed_data_from_memory(struct gameboy_emulator_t *emulator) 
 {
     uint16_t addr = emulator->cpu.reg.pc.data;
     emulator->cpu.reg.pc.data = emulator->cpu.reg.pc.data + 1;
     return emulator->memory.blocks[addr];
 }
 
-static uint16_t read_16_bit_immediate_data_from_memory(struct emulator_t *emulator) 
-{
-    uint16_t addr = emulator->cpu.reg.pc.data;
-    emulator->cpu.reg.pc.data = emulator->cpu.reg.pc.data + 2;
-    return ((emulator->memory.blocks[addr + 1] << 8) & 0xff00) | (emulator->memory.blocks[addr] & 0xff);
-}
-
-static uint8_t read_8_bit_from_memory(struct emulator_t *emulator, uint16_t addr) 
+static uint8_t read_8_bit_from_memory(struct gameboy_emulator_t *emulator, uint16_t addr) 
 {
     return emulator->memory.blocks[addr];
 }
 
-static uint16_t read_16_bit_from_memory(struct emulator_t *emulator, uint16_t addr) 
-{
-    return (((emulator->memory.blocks[addr + 1] << 8) & 0xff00) | (emulator->memory.blocks[addr] & 0xff)) & 0xffff;
-}
 
-static void write_8_bit_to_memory(struct emulator_t *emulator, uint8_t data, uint16_t addr)
+static void write_8_bit_to_memory(struct gameboy_emulator_t *emulator, uint8_t data, uint16_t addr)
 {
     emulator->memory.blocks[addr] = data;
 }
 
-static void write_16_bit_to_memory(struct emulator_t *emulator, uint16_t data, uint16_t addr)
+static uint16_t read_16_bit_from_memory(struct gameboy_emulator_t *emulator, uint16_t addr) 
+{
+    return (((emulator->memory.blocks[addr + 1] << 8) & 0xff00) | (emulator->memory.blocks[addr] & 0xff)) & 0xffff;
+}
+
+static uint16_t read_16_bit_immed_data_from_memory(struct gameboy_emulator_t *emulator) 
+{
+    uint16_t addr = emulator->cpu.reg.pc.data;
+    emulator->cpu.reg.pc.data = emulator->cpu.reg.pc.data + 2;
+    return read_16_bit_from_memory(emulator, addr);
+}
+
+static void write_16_bit_to_memory(struct gameboy_emulator_t *emulator, uint16_t data, uint16_t addr)
 {
     emulator->memory.blocks[addr] = data & 0xff;
     emulator->memory.blocks[addr + 1] = (data >> 0x08) & 0xff;
 }
 
-static void load_r_immediate_data(struct emulator_t *emulator, uint8_t dst, uint16_t addr)
+static void load_r_immed_data(struct gameboy_emulator_t *emulator, uint8_t dst, uint16_t addr)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
-    *(cpu->reg.cpu_8_bit_reg_mapping[dst]) = read_8_bit_from_memory(emulator, addr);
+    *(cpu->reg.cpu_8_bit_reg_map[dst]) = read_8_bit_from_memory(emulator, addr);
 }
 
-static void load_immediate_data_r(struct emulator_t *emulator, uint16_t addr, uint8_t src_reg)
+static void load_immed_data_r(struct gameboy_emulator_t *emulator, uint16_t addr, uint8_t src_reg)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
-    uint8_t data = *(cpu->reg.cpu_8_bit_reg_mapping[src_reg]);
+    uint8_t data = *(cpu->reg.cpu_8_bit_reg_map[src_reg]);
     write_8_bit_to_memory(emulator, data, addr);
 }
 
 // CPU instruction set
-// reference: http://bgb.bircd.org/pandocs.htm#cpuinstructionset
-static void load_r_r(struct emulator_t *emulator)
+// For more details: http://bgb.bircd.org/pandocs.htm#cpuinstructionset
+static void load_r_r(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t dst = (emulator->opcode >> 0x03) & 0x07;
     uint8_t src = emulator->opcode & 0x07;
 
-    *(cpu->reg.cpu_8_bit_reg_mapping[dst]) = *(cpu->reg.cpu_8_bit_reg_mapping[src]);
+    *(cpu->reg.cpu_8_bit_reg_map[dst]) = *(cpu->reg.cpu_8_bit_reg_map[src]);
 }
 
-static void load_r_n(struct emulator_t *emulator)
+static void load_r_n(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t dst = (emulator->opcode >> 0x03) & 0x07;
-    *(cpu->reg.cpu_8_bit_reg_mapping[dst]) = read_8_bit_immediate_data_from_memory(emulator);
+    *(cpu->reg.cpu_8_bit_reg_map[dst]) = read_8_bit_immed_data_from_memory(emulator);
 }
 
-static void load_r_hl(struct emulator_t *emulator)
+static void load_r_hl(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t dst = (emulator->opcode >> 0x03) & 0x07;
-    load_r_immediate_data(emulator, dst, cpu->reg.hl.data);
+    load_r_immed_data(emulator, dst, cpu->reg.hl.data);
 }
 
-static void load_hl_r(struct emulator_t *emulator)
+static void load_hl_r(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t dst    = emulator->opcode & 0x07;
-    uint8_t data   = *(cpu->reg.cpu_8_bit_reg_mapping[dst]);
+    uint8_t data   = *(cpu->reg.cpu_8_bit_reg_map[dst]);
     write_8_bit_to_memory(emulator, data, cpu->reg.hl.data);
 }
 
-static void load_hl_n(struct emulator_t *emulator)
+static void load_hl_n(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
-    uint8_t data = read_8_bit_immediate_data_from_memory(emulator);
+    uint8_t data = read_8_bit_immed_data_from_memory(emulator);
     write_8_bit_to_memory(emulator, data, cpu->reg.hl.data);
 }
 
-static void add_a_r(struct emulator_t *emulator)
+static void add_a_r(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t a      = cpu->reg.af.high;
     uint8_t src    = emulator->opcode & 0x07;
-    uint8_t r      = *(cpu->reg.cpu_8_bit_reg_mapping[src]);
+    uint8_t r      = *(cpu->reg.cpu_8_bit_reg_map[src]);
 
     cpu->reg.af.high = a + r;
 
@@ -227,29 +255,13 @@ static void add_a_r(struct emulator_t *emulator)
     cpu->flags.h_flag = (((a & 0x0f) + (r & 0x0f)) >> 0x04) & 0x01;
 }
 
-// static void adc_a_r(struct emulator_t *emulator)
-// {
-//     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
-
-//     uint8_t a      = cpu->reg.af.high;
-//     uint8_t src    = emulator->opcode & 0x07;
-//     uint8_t r      = *(cpu->reg.cpu_8_bit_reg_mapping[src]);
-
-//     cpu->reg.af.high = a + r;
-
-//     cpu->flags.n_flag = 0;
-//     cpu->flags.z_flag = ((a + r) == 0);
-//     cpu->flags.c_flag = (((a & 0xff) + (r & 0xff)) >> 0x08) & 0x01;
-//     cpu->flags.h_flag = (((a & 0x0f) + (r & 0x0f)) >> 0x04) & 0x01;
-// }
-
-static void sub_a_r(struct emulator_t *emulator)
+static void sub_a_r(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t a      = cpu->reg.af.high;
     uint8_t src    = emulator->opcode & 0x07;
-    uint8_t r      = *(cpu->reg.cpu_8_bit_reg_mapping[src]);
+    uint8_t r      = *(cpu->reg.cpu_8_bit_reg_map[src]);
 
     cpu->reg.af.high = a - r;
 
@@ -259,13 +271,13 @@ static void sub_a_r(struct emulator_t *emulator)
     cpu->flags.h_flag = (((a & 0x0f) - (r & 0x0f)) < 0);
 }
 
-static void and_a_r(struct emulator_t *emulator)
+static void and_a_r(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t a      = cpu->reg.af.high;
     uint8_t src    = emulator->opcode & 0x07;
-    uint8_t r      = *(cpu->reg.cpu_8_bit_reg_mapping[src]);
+    uint8_t r      = *(cpu->reg.cpu_8_bit_reg_map[src]);
 
     cpu->reg.af.high = a & r;
 
@@ -275,13 +287,13 @@ static void and_a_r(struct emulator_t *emulator)
     cpu->flags.z_flag = ((a & r) == 0);
 }
 
-static void or_a_r(struct emulator_t *emulator)
+static void or_a_r(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t a      = cpu->reg.af.high;
     uint8_t src    = emulator->opcode & 0x07;
-    uint8_t r      = *(cpu->reg.cpu_8_bit_reg_mapping[src]);
+    uint8_t r      = *(cpu->reg.cpu_8_bit_reg_map[src]);
 
     cpu->reg.af.high = a | r;
 
@@ -291,13 +303,13 @@ static void or_a_r(struct emulator_t *emulator)
     cpu->flags.z_flag = ((a | r) == 0);
 }
 
-static void xor_a_r(struct emulator_t *emulator)
+static void xor_a_r(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t a      = cpu->reg.af.high;
     uint8_t src    = emulator->opcode & 0x07;
-    uint8_t r      = *(cpu->reg.cpu_8_bit_reg_mapping[src]);
+    uint8_t r      = *(cpu->reg.cpu_8_bit_reg_map[src]);
 
     cpu->reg.af.high = a ^ r;
 
@@ -307,13 +319,13 @@ static void xor_a_r(struct emulator_t *emulator)
     cpu->flags.z_flag = (a == r);
 }
 
-static void cp_a_r(struct emulator_t *emulator)
+static void cp_a_r(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t a      = cpu->reg.af.high;
     uint8_t src    = emulator->opcode & 0x07;
-    uint8_t r      = *(cpu->reg.cpu_8_bit_reg_mapping[src]);
+    uint8_t r      = *(cpu->reg.cpu_8_bit_reg_map[src]);
 
     cpu->flags.n_flag = 1;
     cpu->flags.c_flag = r > a;
@@ -321,12 +333,12 @@ static void cp_a_r(struct emulator_t *emulator)
     cpu->flags.h_flag = (((a & 0x0f) - (r & 0x0f)) < 0);
 }
 
-static void cp_a_n(struct emulator_t *emulator)
+static void cp_a_n(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t a_reg = cpu->reg.af.high;
-    uint8_t data = read_8_bit_immediate_data_from_memory(emulator);
+    uint8_t data = read_8_bit_immed_data_from_memory(emulator);
 
     cpu->flags.n_flag = 1;
     cpu->flags.c_flag = data > a_reg;
@@ -334,79 +346,55 @@ static void cp_a_n(struct emulator_t *emulator)
     cpu->flags.h_flag = (((a_reg & 0x0f) - (data & 0x0f)) < 0);
 }
 
-static void inc_r(struct emulator_t *emulator)
+static void inc_r(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t src = (emulator->opcode >> 0x03) & 0x07;
-    uint8_t r = *(cpu->reg.cpu_8_bit_reg_mapping[src]);
+    uint8_t r = *(cpu->reg.cpu_8_bit_reg_map[src]);
 
-    *(cpu->reg.cpu_8_bit_reg_mapping[src]) = r + 1;
+    *(cpu->reg.cpu_8_bit_reg_map[src]) = r + 1;
 
     cpu->flags.n_flag = 0;
     cpu->flags.z_flag = ((r + 1) == 0);
     // cpu->flags.h_flag = (((a & 0x0f) - (r & 0x0f)) < 0);
 }
 
-static void dec_r(struct emulator_t *emulator)
+static void dec_r(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
     uint8_t src = (emulator->opcode >> 0x03) & 0x07;
-    uint8_t r = *(cpu->reg.cpu_8_bit_reg_mapping[src]);
+    uint8_t r = *(cpu->reg.cpu_8_bit_reg_map[src]);
 
-    *(cpu->reg.cpu_8_bit_reg_mapping[src]) = r - 1;
+    *(cpu->reg.cpu_8_bit_reg_map[src]) = r - 1;
 
     cpu->flags.n_flag = 1;
     cpu->flags.z_flag = ((r - 1) == 0);
     // cpu->flags.h_flag = (((a & 0x0f) - (r & 0x0f)) < 0);
 }
 
-static void inc_rr(struct emulator_t *emulator)
+static void inc_rr(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
-    switch (emulator->opcode)
-    {
-        case 0x03:
-            cpu->reg.bc.data = cpu->reg.bc.data - 1;
-            break;
-        case 0x13:
-            cpu->reg.de.data = cpu->reg.de.data - 1;
-            break;
-        case 0x23:
-            cpu->reg.hl.data = cpu->reg.hl.data - 1;
-            break;
-        case 0x33:
-            cpu->reg.sp.data = cpu->reg.sp.data - 1;
-            break;
-        default:
-            break;
-    }
+    uint8_t reg_index = (emulator->opcode >> 0x04) & 0x03;
+    uint16_t rr = *(cpu->reg.cpu_16_bit_reg_map[reg_index]);
+
+    rr += 1;
+    *(cpu->reg.cpu_16_bit_reg_map[reg_index]) = rr;
 }
 
-static void dec_rr(struct emulator_t *emulator)
+static void dec_rr(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
-    switch (emulator->opcode)
-    {
-        case 0x0b:
-            cpu->reg.bc.data = cpu->reg.bc.data - 1;
-            break;
-        case 0x1b:
-            cpu->reg.de.data = cpu->reg.de.data - 1;
-            break;
-        case 0x2b:
-            cpu->reg.hl.data = cpu->reg.hl.data - 1;
-            break;
-        case 0x3b:
-            cpu->reg.sp.data = cpu->reg.sp.data - 1;
-            break;
-        default:
-            break;
-    }
+    uint8_t reg_index = (emulator->opcode >> 0x04) & 0x03;
+    uint16_t rr = *(cpu->reg.cpu_16_bit_reg_map[reg_index]);
+
+    rr -= 1;
+    *(cpu->reg.cpu_16_bit_reg_map[reg_index]) = rr;
 }
 
-static void rlca(struct emulator_t *emulator)
+static void rlca(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
@@ -421,7 +409,7 @@ static void rlca(struct emulator_t *emulator)
     cpu->reg.af.high = results;
 }
 
-static void rla(struct emulator_t *emulator)
+static void rla(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
@@ -436,7 +424,7 @@ static void rla(struct emulator_t *emulator)
     cpu->reg.af.high = results;
 }
 
-static void rrca(struct emulator_t *emulator)
+static void rrca(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
@@ -451,7 +439,7 @@ static void rrca(struct emulator_t *emulator)
     cpu->reg.af.high = results;
 }
 
-static void rra(struct emulator_t *emulator)
+static void rra(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
@@ -466,11 +454,11 @@ static void rra(struct emulator_t *emulator)
     cpu->reg.af.high = results;
 }
 
-static void bit_operations(struct emulator_t *emulator)
+static void bit_operations(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
 
-    uint8_t data = read_8_bit_immediate_data_from_memory(emulator);
+    uint8_t data = read_8_bit_immed_data_from_memory(emulator);
     uint8_t r = data & 0x07;
 
     uint8_t save_result = 1;
@@ -486,50 +474,50 @@ static void bit_operations(struct emulator_t *emulator)
         case 0x07:
         case 0x00 ... 0x05:  // RLC r
         {
-            carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
-            results = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) << 1) | carry_bit;
+            carry_bit = (*(cpu->reg.cpu_8_bit_reg_map[r]) & 0x80) != 0;
+            results = (*(cpu->reg.cpu_8_bit_reg_map[r]) << 1) | carry_bit;
             break;
         }
         case 0x17:
         case 0x10 ... 0x15: // RL r
         {
-            results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) << 1) | cpu->flags.c_flag;
-            carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
+            results  = (*(cpu->reg.cpu_8_bit_reg_map[r]) << 1) | cpu->flags.c_flag;
+            carry_bit = (*(cpu->reg.cpu_8_bit_reg_map[r]) & 0x80) != 0;
             break;
         }
         case 0x0f:
         case 0x08 ... 0x0d:  // RRC r
         {
-            carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
-            results = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) | (carry_bit << 0x07);
+            carry_bit = (*(cpu->reg.cpu_8_bit_reg_map[r]) & 0x01) != 0;
+            results = (*(cpu->reg.cpu_8_bit_reg_map[r]) >> 1) | (carry_bit << 0x07);
             break;
         }
         case 0x1f:
         case 0x18 ... 0x1d:  // RR  r
         {
-            carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
-            results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) | (cpu->flags.c_flag << 0x07);
+            carry_bit = (*(cpu->reg.cpu_8_bit_reg_map[r]) & 0x01) != 0;
+            results  = (*(cpu->reg.cpu_8_bit_reg_map[r]) >> 1) | (cpu->flags.c_flag << 0x07);
             break;
         }
         case 0x27:
         case 0x20 ... 0x25: // SLA r
         {
-            carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
-            results = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) << 1);
+            carry_bit = (*(cpu->reg.cpu_8_bit_reg_map[r]) & 0x80) != 0;
+            results = (*(cpu->reg.cpu_8_bit_reg_map[r]) << 1);
             break;
         }
         case 0x2f:
         case 0x28 ... 0x2d: // SRA r
         {
-            carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
-            results = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) | ((*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80));
+            carry_bit = (*(cpu->reg.cpu_8_bit_reg_map[r]) & 0x01) != 0;
+            results = (*(cpu->reg.cpu_8_bit_reg_map[r]) >> 1) | ((*(cpu->reg.cpu_8_bit_reg_map[r]) & 0x80));
             break;
         }
         case 0x3f:
         case 0x38 ... 0x3d: // SRL r
         {
-            carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
-            results = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) & 0xff;
+            carry_bit = (*(cpu->reg.cpu_8_bit_reg_map[r]) & 0x01) != 0;
+            results = (*(cpu->reg.cpu_8_bit_reg_map[r]) >> 1) & 0xff;
             break;
         }
         case 0x40 ... 0x45: // BIT b, r
@@ -546,7 +534,7 @@ static void bit_operations(struct emulator_t *emulator)
         case 0x7f:
         {
             uint8_t index = (data >> 0x03 ) & 0x07;
-            results = *(cpu->reg.cpu_8_bit_reg_mapping[r]) & (1 << index);
+            results = *(cpu->reg.cpu_8_bit_reg_map[r]) & (1 << index);
             save_result = 0;
             h_flag = 1;
             break;
@@ -565,7 +553,7 @@ static void bit_operations(struct emulator_t *emulator)
         case 0xbf:
         {
             uint8_t index = (data >> 0x03 ) & 0x07;
-            results = *(cpu->reg.cpu_8_bit_reg_mapping[r]) & ~(1 << index); 
+            results = *(cpu->reg.cpu_8_bit_reg_map[r]) & ~(1 << index); 
             save_result = 1;
             affect_flags = 0;
             break;
@@ -584,7 +572,7 @@ static void bit_operations(struct emulator_t *emulator)
         case 0xff:
         {
             uint8_t index = (data >> 0x03 ) & 0x07;
-            results = *(cpu->reg.cpu_8_bit_reg_mapping[r]) | (1 << index); 
+            results = *(cpu->reg.cpu_8_bit_reg_map[r]) | (1 << index); 
             save_result = 1;
             affect_flags = 0;
             break;
@@ -601,44 +589,28 @@ static void bit_operations(struct emulator_t *emulator)
         cpu->flags.h_flag = h_flag;
     }
 
-    if (save_result) *(cpu->reg.cpu_8_bit_reg_mapping[r]) = results;
+    if (save_result) *(cpu->reg.cpu_8_bit_reg_map[r]) = results;
 }
 
-static void ld_rr_nn(struct emulator_t *emulator)
+static void ld_rr_nn(struct gameboy_emulator_t *emulator)
 {
-    uint16_t immediate_data = read_16_bit_immediate_data_from_memory(emulator);
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
+    uint8_t reg_index = (emulator->opcode >> 0x04) & 0x03;
 
-    switch (emulator->opcode)
-    {
-        case 0x01:
-            cpu->reg.bc.data = immediate_data;
-            break;
-        case 0x11:
-            cpu->reg.de.data = immediate_data;
-            break;
-        case 0x21:
-            cpu->reg.hl.data = immediate_data;
-            break;
-        case 0x31:
-            cpu->reg.sp.data = immediate_data;
-            break;
-        default:
-            break;
-    }
+    *(cpu->reg.cpu_16_bit_reg_map[reg_index]) = read_16_bit_immed_data_from_memory(emulator);
 }
 
-static void jump_nn(struct emulator_t *emulator, uint16_t addr)
+static void jump_nn(struct gameboy_emulator_t *emulator, uint16_t addr)
 {
     emulator->cpu.reg.pc.data = addr;
 }
 
-static void jump_n(struct emulator_t *emulator, uint8_t addr)
+static void jump_n(struct gameboy_emulator_t *emulator, uint8_t addr)
 {
     emulator->cpu.reg.pc.data = emulator->cpu.reg.pc.data + (int8_t)addr;
 }
 
-static void jump_cc_nn(struct emulator_t *emulator, uint16_t addr)
+static void jump_cc_nn(struct gameboy_emulator_t *emulator, uint16_t addr)
 {
     uint8_t should_jump = 0;
     switch (emulator->opcode)
@@ -651,7 +623,7 @@ static void jump_cc_nn(struct emulator_t *emulator, uint16_t addr)
     if (should_jump) jump_nn(emulator, addr);
 }
 
-static void jump_cc_n(struct emulator_t *emulator, uint8_t addr)
+static void jump_cc_n(struct gameboy_emulator_t *emulator, uint8_t addr)
 {
     uint8_t should_jump = 0;
     switch (emulator->opcode)
@@ -664,7 +636,7 @@ static void jump_cc_n(struct emulator_t *emulator, uint8_t addr)
     if (should_jump) jump_n(emulator, addr);
 }
 
-static void call_nn(struct emulator_t *emulator, uint16_t addr)
+static void call_nn(struct gameboy_emulator_t *emulator, uint16_t addr)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
     
@@ -673,7 +645,7 @@ static void call_nn(struct emulator_t *emulator, uint16_t addr)
     cpu->reg.sp.data = cpu->reg.sp.data - 2;
 }
 
-static void call_cc_nn(struct emulator_t *emulator, uint16_t addr)
+static void call_cc_nn(struct gameboy_emulator_t *emulator, uint16_t addr)
 {
     uint8_t should_jump = 0;
     switch (emulator->opcode)
@@ -686,65 +658,39 @@ static void call_cc_nn(struct emulator_t *emulator, uint16_t addr)
     if (should_jump) call_nn(emulator, addr);
 }
 
-static void push_qq(struct emulator_t *emulator)
+static void push_qq(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
-    uint16_t data;
+    uint8_t reg_index = (emulator->opcode >> 0x04) & 0x03;
+    uint16_t data =  *(cpu->reg.cpu_16_bit_reg_map[reg_index]);
 
-    switch (emulator->opcode)
-    {
-        case 0xc5:
-            data = cpu->reg.bc.data;
-            break;
-        case 0xd5:
-            data = cpu->reg.de.data;
-            break;
-        case 0xe5:
-            data = cpu->reg.hl.data;
-            break;
-        case 0xf5:
-            data = cpu->reg.af.data;    // fix unloaded F register
-            break;
-        default:
-            exit(0);
-    }
     write_16_bit_to_memory(emulator, data, cpu->reg.sp.data);
     cpu->reg.sp.data = cpu->reg.sp.data - 2;
 }
 
-static void pop_qq(struct emulator_t *emulator)
-{
-    struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
-    
-    cpu->reg.sp.data = cpu->reg.sp.data + 2;
-    uint16_t data = read_16_bit_from_memory(emulator, cpu->reg.sp.data);
-    switch (emulator->opcode)
-    {
-        case 0xc1:
-            cpu->reg.bc.data = data;
-            break;
-        case 0xd1:
-            cpu->reg.de.data = data;
-            break;
-        case 0xe1:
-            cpu->reg.hl.data = data;
-            break;
-        case 0xf1:
-            cpu->reg.af.data = data; // fix unloaded F register
-            break;
-        default:
-            exit(0);
-    }
+static void ld_nn_sp(struct gameboy_emulator_t *emulator)
+{    
+    uint16_t addr = read_16_bit_immed_data_from_memory(emulator);
+    write_16_bit_to_memory(emulator, emulator->cpu.reg.sp.data, addr);
 }
 
-static void ret(struct emulator_t *emulator)
+static void pop_qq(struct gameboy_emulator_t *emulator)
+{
+    struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
+    uint8_t reg_index = (emulator->opcode >> 0x04) & 0x03;
+    
+    cpu->reg.sp.data = cpu->reg.sp.data + 2;
+    *(cpu->reg.cpu_16_bit_reg_map[reg_index]) = read_16_bit_from_memory(emulator, cpu->reg.sp.data);
+}
+
+static void ret(struct gameboy_emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
     cpu->reg.sp.data = cpu->reg.sp.data + 2;
     cpu->reg.pc.data = read_16_bit_from_memory(emulator, cpu->reg.sp.data);
 }
 
-static void ret_cc(struct emulator_t *emulator)
+static void ret_cc(struct gameboy_emulator_t *emulator)
 {
     uint8_t should_jump = 0;
     switch (emulator->opcode)
@@ -757,12 +703,13 @@ static void ret_cc(struct emulator_t *emulator)
     if (should_jump) ret(emulator);
 }
 
-static void emulator_initialize(struct emulator_t *emulator)
+static void emulator_initialize(struct gameboy_emulator_t *emulator)
 {
-    // Initialize CPU registers and flags. http://bgb.bircd.org/pandocs.htm#powerupsequence
+    // Initialize CPU registers and flags. 
+    // For more details: http://bgb.bircd.org/pandocs.htm#powerupsequence
     emulator->cpu.reg.pc.data = 0x0000;
     emulator->cpu.reg.sp.data = 0xfffe;
-#if  defined(GB) || defined(SGB)
+#if  defined(__GB__) || defined(__SGB__)
     emulator->cpu.reg.af.data = 0x01b0;
 #else
     #error "[Config] error - unknown emulation platform (either GB or SGB)."
@@ -773,16 +720,23 @@ static void emulator_initialize(struct emulator_t *emulator)
     emulator->cpu.tag = "SM83";
     
     // Map 8 bit registers
-    emulator->cpu.reg.cpu_8_bit_reg_mapping[0x00] = &emulator->cpu.reg.bc.high;     // Register B
-    emulator->cpu.reg.cpu_8_bit_reg_mapping[0x01] = &emulator->cpu.reg.bc.low;      // Register C
-    emulator->cpu.reg.cpu_8_bit_reg_mapping[0x02] = &emulator->cpu.reg.de.high;     // Register D
-    emulator->cpu.reg.cpu_8_bit_reg_mapping[0x03] = &emulator->cpu.reg.de.low;      // Register E
-    emulator->cpu.reg.cpu_8_bit_reg_mapping[0x04] = &emulator->cpu.reg.hl.high;     // Register H
-    emulator->cpu.reg.cpu_8_bit_reg_mapping[0x05] = &emulator->cpu.reg.hl.low;      // Register L
-    emulator->cpu.reg.cpu_8_bit_reg_mapping[0x06] = NULL;                           // Not mapped
-    emulator->cpu.reg.cpu_8_bit_reg_mapping[0x07] = &emulator->cpu.reg.af.high;     // Register A
+    emulator->cpu.reg.cpu_8_bit_reg_map[0x00] = &emulator->cpu.reg.bc.high;     // Register B
+    emulator->cpu.reg.cpu_8_bit_reg_map[0x01] = &emulator->cpu.reg.bc.low;      // Register C
+    emulator->cpu.reg.cpu_8_bit_reg_map[0x02] = &emulator->cpu.reg.de.high;     // Register D
+    emulator->cpu.reg.cpu_8_bit_reg_map[0x03] = &emulator->cpu.reg.de.low;      // Register E
+    emulator->cpu.reg.cpu_8_bit_reg_map[0x04] = &emulator->cpu.reg.hl.high;     // Register H
+    emulator->cpu.reg.cpu_8_bit_reg_map[0x05] = &emulator->cpu.reg.hl.low;      // Register L
+    emulator->cpu.reg.cpu_8_bit_reg_map[0x06] = NULL;                           // Not mapped
+    emulator->cpu.reg.cpu_8_bit_reg_map[0x07] = &emulator->cpu.reg.af.high;     // Register A
 
-    // Initialize memory and in-memory registers. http://bgb.bircd.org/pandocs.htm#powerupsequence
+    // Map 16 bit registers
+    emulator->cpu.reg.cpu_16_bit_reg_map[0x00] = &emulator->cpu.reg.bc.data;     // Register BC
+    emulator->cpu.reg.cpu_16_bit_reg_map[0x01] = &emulator->cpu.reg.de.data;     // Register DE
+    emulator->cpu.reg.cpu_16_bit_reg_map[0x02] = &emulator->cpu.reg.hl.data;     // Register HL
+    emulator->cpu.reg.cpu_16_bit_reg_map[0x03] = &emulator->cpu.reg.sp.data;     // Register SP
+
+    // Initialize memory and in-memory registers. 
+    // For more details: http://bgb.bircd.org/pandocs.htm#powerupsequence
     emulator->memory.size = MAIN_MEORY_SIZE;
     memset(emulator->memory.blocks, 0, emulator->memory.size);
     memcpy(emulator->memory.rom, boot_rom, 0x0100);
@@ -807,9 +761,9 @@ static void emulator_initialize(struct emulator_t *emulator)
     emulator->memory.blocks[0xff23] = 0xbf;
     emulator->memory.blocks[0xff24] = 0x77;
     emulator->memory.blocks[0xff25] = 0xf3;
-#ifdef GB
+#ifdef __GB__
     emulator->memory.blocks[0xff26] = 0xf1;
-#elif SGB
+#elif __SGB__
     emulator->memory.blocks[0xff26] = 0xf0;
 #else
     #error "[Config] error - unknown emulation platform (either GB or SGB)."
@@ -825,7 +779,7 @@ static void emulator_initialize(struct emulator_t *emulator)
     emulator->memory.blocks[0xff4b] = 0x00;
 }
 
-void dum_cpu_registers(struct emulator_t *emulator)
+void dum_cpu_registers(struct gameboy_emulator_t *emulator)
 {
     printf("[INFO ] Register dumps\n");
     printf("A = %2xh,\t",   emulator->cpu.reg.af.high);
@@ -845,9 +799,9 @@ void dum_cpu_registers(struct emulator_t *emulator)
     printf("[INFO ] End\n\n");
 }
 
-void step_emulator(struct emulator_t *emulator)
+void cpu_step_emulator(struct gameboy_emulator_t *emulator)
 {
-    emulator->opcode = read_8_bit_immediate_data_from_memory(emulator);
+    emulator->opcode = read_8_bit_immed_data_from_memory(emulator);
     printf("[DEBUG] Executing opcode = $%x\n", emulator->opcode);
     switch (emulator->opcode) 
     {
@@ -900,74 +854,74 @@ void step_emulator(struct emulator_t *emulator)
             load_hl_n(emulator);
             break;
         case 0x0a:
-            load_r_immediate_data(emulator, 0x07, emulator->cpu.reg.bc.data);
+            load_r_immed_data(emulator, 0x07, emulator->cpu.reg.bc.data);
             break;
         case 0x1a:
-            load_r_immediate_data(emulator, 0x07, emulator->cpu.reg.de.data);
+            load_r_immed_data(emulator, 0x07, emulator->cpu.reg.de.data);
             break;
         case 0xf2: 
         {
             uint16_t addr = 0xff00 + emulator->cpu.reg.bc.low;
-            load_r_immediate_data(emulator, 0x07, addr);
+            load_r_immed_data(emulator, 0x07, addr);
             break;
         }
         case 0xe2: 
         {
             uint16_t addr = 0xff00 + emulator->cpu.reg.bc.low;
-            load_immediate_data_r(emulator, addr, 0x07);
+            load_immed_data_r(emulator, addr, 0x07);
             break;
         }
         case 0xf0: 
         {
-            uint8_t addr = read_8_bit_immediate_data_from_memory(emulator);
-            load_r_immediate_data(emulator, 0x07, addr);
+            uint8_t addr = read_8_bit_immed_data_from_memory(emulator);
+            load_r_immed_data(emulator, 0x07, addr);
             break;
         }
         case 0xe0: 
         {
-            uint8_t addr = read_8_bit_immediate_data_from_memory(emulator);
-            load_immediate_data_r(emulator, addr, 0x07);
+            uint8_t addr = read_8_bit_immed_data_from_memory(emulator);
+            load_immed_data_r(emulator, addr, 0x07);
             break;
         }
         case 0xfa: 
         {
-            uint16_t addr = read_16_bit_immediate_data_from_memory(emulator);
-            load_r_immediate_data(emulator, 0x07, addr);
+            uint16_t addr = read_16_bit_immed_data_from_memory(emulator);
+            load_r_immed_data(emulator, 0x07, addr);
             break;
         }
         case 0xea: 
         {
-            uint16_t addr = read_16_bit_immediate_data_from_memory(emulator);
-            load_immediate_data_r(emulator, addr, 0x07);
+            uint16_t addr = read_16_bit_immed_data_from_memory(emulator);
+            load_immed_data_r(emulator, addr, 0x07);
             break;
         }
         case 0x2a: 
         {
-            load_r_immediate_data(emulator, 0x07, emulator->cpu.reg.hl.data);
+            load_r_immed_data(emulator, 0x07, emulator->cpu.reg.hl.data);
             emulator->cpu.reg.hl.data = emulator->cpu.reg.hl.data + 1;
             break;
         }
         case 0x3a: 
         {
-            load_r_immediate_data(emulator, 0x07, emulator->cpu.reg.hl.data);
+            load_r_immed_data(emulator, 0x07, emulator->cpu.reg.hl.data);
             emulator->cpu.reg.hl.data = emulator->cpu.reg.hl.data - 1;
             break;
         }
         case 0x02:
-            load_immediate_data_r(emulator, emulator->cpu.reg.bc.data, 0x07);
+            load_immed_data_r(emulator, emulator->cpu.reg.bc.data, 0x07);
             break;
         case 0x12:
-            load_immediate_data_r(emulator, emulator->cpu.reg.de.data, 0x07);
+            load_immed_data_r(emulator, emulator->cpu.reg.de.data, 0x07);
             break;
         case 0x22: 
         {
-            load_immediate_data_r(emulator, emulator->cpu.reg.hl.data, 0x07);
+            load_immed_data_r(emulator, emulator->cpu.reg.hl.data, 0x07);
             emulator->cpu.reg.hl.data = emulator->cpu.reg.hl.data + 1;
             break;
         }
         case 0x32: 
         {
-            load_immediate_data_r(emulator, emulator->cpu.reg.hl.data, 0x07);
+            load_immed_data_r(emulator, emulator->cpu.reg.hl.data, 0x07);
             emulator->cpu.reg.hl.data = emulator->cpu.reg.hl.data - 1;
             break;
         }
@@ -1047,35 +1001,35 @@ void step_emulator(struct emulator_t *emulator)
             break;
         // Jump instructions
         case 0xc3:  // JP nn
-            jump_nn(emulator, read_16_bit_immediate_data_from_memory(emulator));
+            jump_nn(emulator, read_16_bit_immed_data_from_memory(emulator));
             break;
         case 0xc2:
         case 0xca:
         case 0xd2:
         case 0xda:  // JP cc, nn
-            jump_cc_nn(emulator, read_16_bit_immediate_data_from_memory(emulator));
+            jump_cc_nn(emulator, read_16_bit_immed_data_from_memory(emulator));
             break;
         case 0x20:
         case 0x28:
         case 0x30:
         case 0x38:  // JR cc, n
-            jump_cc_n(emulator, read_8_bit_immediate_data_from_memory(emulator));
+            jump_cc_n(emulator, read_8_bit_immed_data_from_memory(emulator));
             break;
         case 0x18:  // JR n
-            jump_n(emulator, read_8_bit_immediate_data_from_memory(emulator));
+            jump_n(emulator, read_8_bit_immed_data_from_memory(emulator));
             break;
         case 0xe9:  // JP (hl)
             jump_nn(emulator, emulator->cpu.reg.hl.data);
             break;
         // Call instructions
         case 0xcd:  // Call nn
-            call_nn(emulator, read_16_bit_immediate_data_from_memory(emulator));
+            call_nn(emulator, read_16_bit_immed_data_from_memory(emulator));
             break;
         case 0xc4:  // Call cc, nn
         case 0xcc:
         case 0xd4:
         case 0xdc:
-            call_cc_nn(emulator, read_16_bit_immediate_data_from_memory(emulator));
+            call_cc_nn(emulator, read_16_bit_immed_data_from_memory(emulator));
             break;
         case 0xc9:  // RET
             ret(emulator);
@@ -1108,6 +1062,9 @@ void step_emulator(struct emulator_t *emulator)
         case 0xf9:
             emulator->cpu.reg.sp.data = emulator->cpu.reg.hl.data;
             break;
+        case 0x08:
+            ld_nn_sp(emulator);
+            break;
         // 16 bit atirthmetic
         case 0x03:  // INC rr
         case 0x13:
@@ -1130,25 +1087,24 @@ void step_emulator(struct emulator_t *emulator)
     }
 }
 
+void ppu_step_emulator(struct gameboy_emulator_t *emulator)
+{
+
+}
+
 // SDL2 https://lazyfoo.net/tutorials/SDL/01_hello_SDL/mac/index.php
 // Boot sequence https://knight.sc/reverse%20engineering/2018/11/19/game-boy-boot-sequence.html
 int main(int argc, char *argv[]) 
 {
-    struct emulator_t emulator;
+    struct gameboy_emulator_t emulator;
 
     emulator_initialize(&emulator);
-    dum_cpu_registers(&emulator);
-    
-    step_emulator(&emulator);
-    step_emulator(&emulator);
-    step_emulator(&emulator);
-    
-    for (int k = 0; ; ++k)
-    {
-        step_emulator(&emulator);
-    }
 
-    dum_cpu_registers(&emulator);
+    for ( ;/* Enter infinite loop */; )
+    {
+        cpu_step_emulator(&emulator);
+        ppu_step_emulator(&emulator);
+    }
 
     return 0;
 }
