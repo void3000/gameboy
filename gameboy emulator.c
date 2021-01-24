@@ -2,6 +2,7 @@
 // Author: keorapetse.finger@yahoo.com (Keorapetse Finger)
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define GB
@@ -86,7 +87,7 @@ struct memory_t {
         };
         uint8_t blocks[MAIN_MEORY_SIZE];
     };
-    uint32_t size;
+    uint16_t size;
 };
 
 struct emulator_t {
@@ -139,6 +140,12 @@ static uint8_t read_8_bit_from_memory(struct emulator_t *emulator, uint16_t addr
 static void write_8_bit_to_memory(struct emulator_t *emulator, uint8_t data, uint16_t addr)
 {
     emulator->memory.blocks[addr] = data;
+}
+
+static void write_16_bit_to_memory(struct emulator_t *emulator, uint16_t data, uint16_t addr)
+{
+    emulator->memory.blocks[addr] = data & 0xff;
+    emulator->memory.blocks[addr + 1] = (data >> 0x08) & 0xff;
 }
 
 static void load_r_immediate_data(struct emulator_t *emulator, uint8_t dst, uint16_t addr)
@@ -403,8 +410,11 @@ static void bit_operations(struct emulator_t *emulator)
 
     uint8_t data = read_8_bit_immediate_data_from_memory(emulator);
     uint8_t r = data & 0x07;
+
     uint8_t save_result = 1;
+    uint8_t affect_flags= 1;
     uint8_t results;
+
     uint8_t carry_bit = cpu->flags.c_flag;
     uint8_t h_flag = cpu->flags.h_flag;
 
@@ -412,70 +422,122 @@ static void bit_operations(struct emulator_t *emulator)
     switch(data)
     {
         case 0x07:
-        case 0x00 ... 0x05:  // RLC r'
+        case 0x00 ... 0x05:  // RLC r
         {
             carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
             results = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) << 1) | carry_bit;
             break;
         }
         case 0x17:
-        case 0x10 ... 0x15: // RL r' 
+        case 0x10 ... 0x15: // RL r
         {
             results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) << 1) | cpu->flags.c_flag;
             carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
             break;
         }
         case 0x0f:
-        case 0x08 ... 0x0d:  // RRC r'
+        case 0x08 ... 0x0d:  // RRC r
         {
             carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
             results = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) | (carry_bit << 0x07);
             break;
         }
         case 0x1f:
-        case 0x18 ... 0x1d:  // RR  r'
+        case 0x18 ... 0x1d:  // RR  r
         {
             carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
             results  = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) | (cpu->flags.c_flag << 0x07);
             break;
         }
         case 0x27:
-        case 0x20 ... 0x25: // SLA r'
+        case 0x20 ... 0x25: // SLA r
         {
             carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80) != 0;
             results = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) << 1);
             break;
         }
         case 0x2f:
-        case 0x28 ... 0x2d: // SRA r'
+        case 0x28 ... 0x2d: // SRA r
         {
             carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
             results = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) | ((*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x80));
             break;
         }
         case 0x3f:
-        case 0x38 ... 0x3d: // SRL r'
+        case 0x38 ... 0x3d: // SRL r
         {
             carry_bit = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) & 0x01) != 0;
             results = (*(cpu->reg.cpu_8_bit_reg_mapping[r]) >> 1) & 0xff;
             break;
         }
-        case 0x7c:
-        case 0x40 ... 0x45: // BIT b, r'
+        case 0x40 ... 0x45: // BIT b, r
+        case 0x47 ... 0x4d:
+        case 0x4f:
+        case 0x50 ... 0x55:
+        case 0x57 ... 0x5d:
+        case 0x5f:
+        case 0x60 ... 0x65:
+        case 0x67 ... 0x6d:
+        case 0x6f:
+        case 0x70 ... 0x75:
+        case 0x77 ... 0x7d:
+        case 0x7f:
         {
             uint8_t index = (data >> 0x03 ) & 0x07;
-            results = *(cpu->reg.cpu_8_bit_reg_mapping[r]) & ( 1 << index); 
+            results = *(cpu->reg.cpu_8_bit_reg_mapping[r]) & (1 << index);
             save_result = 0;
+            h_flag = 1;
+            break;
+        }
+        case 0x80 ... 0x85: // RES b, r
+        case 0x87 ... 0x8d:
+        case 0x8f:
+        case 0x90 ... 0x95:
+        case 0x97 ... 0x9d:
+        case 0x9f:
+        case 0xa0 ... 0xa5:
+        case 0xa7 ... 0xad:
+        case 0xaf:
+        case 0xb0 ... 0xb5:
+        case 0xb7 ... 0xbd:
+        case 0xbf:
+        {
+            uint8_t index = (data >> 0x03 ) & 0x07;
+            results = *(cpu->reg.cpu_8_bit_reg_mapping[r]) & ~(1 << index); 
+            save_result = 1;
+            affect_flags = 0;
+            break;
+        }
+        case 0xc0 ... 0xc5: // SET b, r
+        case 0xc7 ... 0xcd:
+        case 0xcf:
+        case 0xd0 ... 0xd5:
+        case 0xd7 ... 0xdd:
+        case 0xdf:
+        case 0xe0 ... 0xe5:
+        case 0xe7 ... 0xed:
+        case 0xef:
+        case 0xf0 ... 0xf5:
+        case 0xf7 ... 0xfd:
+        case 0xff:
+        {
+            uint8_t index = (data >> 0x03 ) & 0x07;
+            results = *(cpu->reg.cpu_8_bit_reg_mapping[r]) | (1 << index); 
+            save_result = 1;
+            affect_flags = 0;
             break;
         }
         defualt:
             break;
     }
 
-    cpu->flags.z_flag = results == 0;
-    cpu->flags.c_flag = carry_bit;
-    cpu->flags.n_flag = 0;
-    cpu->flags.h_flag = h_flag;
+    if (affect_flags)
+    {
+        cpu->flags.z_flag = results == 0;
+        cpu->flags.c_flag = carry_bit;
+        cpu->flags.n_flag = 0;
+        cpu->flags.h_flag = h_flag;
+    }
 
     if (save_result) *(cpu->reg.cpu_8_bit_reg_mapping[r]) = results;
 }
@@ -488,25 +550,78 @@ static void ld_rr_nn(struct emulator_t *emulator)
     switch (emulator->opcode)
     {
         case 0x01:
-                cpu->reg.bc.data = immediate_data;
-                break;
+            cpu->reg.bc.data = immediate_data;
+            break;
         case 0x11:
-                cpu->reg.de.data = immediate_data;
-                break;
+            cpu->reg.de.data = immediate_data;
+            break;
         case 0x21:
-                cpu->reg.hl.data = immediate_data;
-                break;
+            cpu->reg.hl.data = immediate_data;
+            break;
         case 0x31:
-                cpu->reg.sp.data = immediate_data;
-                break;
-            default:
-                break;
+            cpu->reg.sp.data = immediate_data;
+            break;
+        default:
+            break;
     }
 }
 
 static void jump_nn(struct emulator_t *emulator, uint16_t addr)
 {
     emulator->cpu.reg.pc.data = addr;
+}
+
+static void jump_n(struct emulator_t *emulator, uint8_t addr)
+{
+    emulator->cpu.reg.pc.data = emulator->cpu.reg.pc.data + (int8_t)addr;
+}
+
+static void jump_cc_nn(struct emulator_t *emulator, uint16_t addr)
+{
+    uint8_t should_jump = 0;
+    switch (emulator->opcode)
+    {
+        case 0xc2: should_jump = !emulator->cpu.flags.z_flag; break;
+        case 0xca: should_jump = emulator->cpu.flags.z_flag;  break;
+        case 0xd2: should_jump = !emulator->cpu.flags.c_flag; break;
+        case 0xda: should_jump = emulator->cpu.flags.c_flag;  break;
+    }
+    if (should_jump) jump_nn(emulator, addr);
+}
+
+static void jump_cc_n(struct emulator_t *emulator, uint8_t addr)
+{
+    uint8_t should_jump = 0;
+    switch (emulator->opcode)
+    {
+        case 0x20: should_jump = !emulator->cpu.flags.z_flag; break;
+        case 0x28: should_jump = emulator->cpu.flags.z_flag;  break;
+        case 0x30: should_jump = !emulator->cpu.flags.c_flag; break;
+        case 0x38: should_jump = emulator->cpu.flags.c_flag;  break;
+    }
+    if (should_jump) jump_n(emulator, addr);
+}
+
+static void call_nn(struct emulator_t *emulator, uint16_t addr)
+{
+    struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
+    
+    write_16_bit_to_memory(emulator, cpu->reg.pc.data, cpu->reg.sp.data);
+    cpu->reg.pc.data = addr;
+    cpu->reg.sp.data = cpu->reg.sp.data - 2;
+}
+
+static void call_cc_nn(struct emulator_t *emulator, uint16_t addr)
+{
+    uint8_t should_jump = 0;
+    switch (emulator->opcode)
+    {
+        case 0xc4: should_jump = !emulator->cpu.flags.z_flag; break;
+        case 0xcc: should_jump = emulator->cpu.flags.z_flag;  break;
+        case 0xd4: should_jump = !emulator->cpu.flags.c_flag; break;
+        case 0xdc: should_jump = emulator->cpu.flags.c_flag;  break;
+    }
+    if (should_jump) call_nn(emulator, addr);
 }
 
 static void emulator_initialize(struct emulator_t *emulator)
@@ -577,6 +692,26 @@ static void emulator_initialize(struct emulator_t *emulator)
     emulator->memory.blocks[0xff4b] = 0x00;
 }
 
+void dum_cpu_registers(struct emulator_t *emulator)
+{
+    printf("[INFO ] Register dumps\n");
+    printf("A = %2xh,\t",   emulator->cpu.reg.af.high);
+    printf("B = %2xh,\t",   emulator->cpu.reg.bc.high);
+    printf("D = %2xh,\t",   emulator->cpu.reg.de.high);
+    printf("H = %2xh\n",    emulator->cpu.reg.hl.high);
+    printf("- = %2xh,\t",   emulator->cpu.reg.af.low);
+    printf("C = %2xh,\t",   emulator->cpu.reg.bc.low);
+    printf("E = %2xh,\t",   emulator->cpu.reg.de.low);
+    printf("L = %2xh\n\n",  emulator->cpu.reg.hl.low);
+    printf("PC= %2xh,\t",   emulator->cpu.reg.pc.data);
+    printf("SP= %2xh\n\n",  emulator->cpu.reg.sp.data);
+    printf("Z = %2xh,\t",   emulator->cpu.flags.z_flag);
+    printf("N = %2xh,\t",   emulator->cpu.flags.n_flag);
+    printf("H = %2xh,\t",   emulator->cpu.flags.h_flag);
+    printf("C = %2xh\n",    emulator->cpu.flags.c_flag);
+    printf("[INFO ] End\n\n");
+}
+
 void step_emulator(struct emulator_t *emulator)
 {
     emulator->opcode = read_8_bit_immediate_data_from_memory(emulator);
@@ -601,6 +736,7 @@ void step_emulator(struct emulator_t *emulator)
         case 0x1e:
         case 0x26:
         case 0x2e:
+        case 0x3e:
             load_r_n(emulator);
             break;
         case 0x7f:              // LD A, r'
@@ -620,6 +756,7 @@ void step_emulator(struct emulator_t *emulator)
             load_r_r(emulator);
             break;
         case 0x70 ... 0x75:     // LD (HL), r'
+        case 0x77:
             load_hl_r(emulator);
             break;
         case 0x36:
@@ -756,20 +893,49 @@ void step_emulator(struct emulator_t *emulator)
         case 0x1f:
             rra(emulator);
             break;
-        case 0xcb:  
-            // RLC r'
-            // RL  r'
-            // RRC r'
-            // RR  r'
-            // SLA r'
-            // SRA r'
-            // SRL r'
-            // BIT b, r'
+        // Extended instructions
+        case 0xcb:
+            // RLC r
+            // RL  r
+            // RRC r
+            // RR  r
+            // SLA r
+            // SRA r
+            // SRL r
+            // BIT b, r
             bit_operations(emulator);
             break;
         // Jump instructions
-        case 0xc3:
+        case 0xc3:  // JP nn
             jump_nn(emulator, read_16_bit_immediate_data_from_memory(emulator));
+            break;
+        case 0xc2:
+        case 0xca:
+        case 0xd2:
+        case 0xda:  // JP cc, nn
+            jump_cc_nn(emulator, read_16_bit_immediate_data_from_memory(emulator));
+            break;
+        case 0x20:
+        case 0x28:
+        case 0x30:
+        case 0x38:  // JR cc, n
+            jump_cc_n(emulator, read_8_bit_immediate_data_from_memory(emulator));
+            break;
+        case 0x18:  // JR n
+            jump_n(emulator, read_8_bit_immediate_data_from_memory(emulator));
+            break;
+        case 0xe9:  // JP (hl)
+            jump_nn(emulator, emulator->cpu.reg.hl.data);
+            break;
+        // Call instructions
+        case 0xcd:  // Call nn
+            call_nn(emulator, read_16_bit_immediate_data_from_memory(emulator));
+            break;
+        case 0xc4:
+        case 0xcc:
+        case 0xd4:
+        case 0xdc:
+            call_cc_nn(emulator, read_16_bit_immediate_data_from_memory(emulator));
             break;
         // 16 bit load instructions
         case 0x01:
@@ -782,29 +948,12 @@ void step_emulator(struct emulator_t *emulator)
             emulator->cpu.reg.sp.data = emulator->cpu.reg.hl.data;
             break;
         default:
-            printf("Instruction $%x not implemented\n", emulator->opcode);
-            break;
+        {
+            printf("[DEBUG] Instruction $%x Not Implemented.\n", emulator->opcode);
+            dum_cpu_registers(emulator);
+            exit(0);
+        }
     }
-}
-
-void dum_cpu_registers(struct emulator_t *emulator)
-{
-    printf("=== Register dumps ===\n");
-    printf("A = %2xh,\t",   emulator->cpu.reg.af.high);
-    printf("B = %2xh,\t",   emulator->cpu.reg.bc.high);
-    printf("D = %2xh,\t",   emulator->cpu.reg.de.high);
-    printf("H = %2xh\n",    emulator->cpu.reg.hl.high);
-    printf("- = %2xh,\t",   emulator->cpu.reg.af.low);
-    printf("C = %2xh,\t",   emulator->cpu.reg.bc.low);
-    printf("E = %2xh,\t",   emulator->cpu.reg.de.low);
-    printf("L = %2xh\n\n",  emulator->cpu.reg.hl.low);
-    printf("PC= %2xh,\t",   emulator->cpu.reg.pc.data);
-    printf("SP= %2xh\n\n",  emulator->cpu.reg.sp.data);
-    printf("Z = %2xh,\t",   emulator->cpu.flags.z_flag);
-    printf("N = %2xh,\t",   emulator->cpu.flags.n_flag);
-    printf("H = %2xh,\t",   emulator->cpu.flags.h_flag);
-    printf("C = %2xh\n",    emulator->cpu.flags.c_flag);
-    printf("=== End ===\n\n");
 }
 
 // SDL2 https://lazyfoo.net/tutorials/SDL/01_hello_SDL/mac/index.php
@@ -874,8 +1023,11 @@ int main(int argc, char *argv[])
     step_emulator(&emulator);
     step_emulator(&emulator);
     step_emulator(&emulator);
-    step_emulator(&emulator);
-    step_emulator(&emulator);
+    
+    for (int k = 0; k < 0x6010; ++k)
+    {
+        step_emulator(&emulator);
+    }
 
     dum_cpu_registers(&emulator);
 
