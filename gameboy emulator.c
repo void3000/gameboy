@@ -137,6 +137,11 @@ static uint8_t read_8_bit_from_memory(struct emulator_t *emulator, uint16_t addr
     return emulator->memory.blocks[addr];
 }
 
+static uint16_t read_16_bit_from_memory(struct emulator_t *emulator, uint16_t addr) 
+{
+    return (((emulator->memory.blocks[addr + 1] << 8) & 0xff00) | (emulator->memory.blocks[addr] & 0xff)) & 0xffff;
+}
+
 static void write_8_bit_to_memory(struct emulator_t *emulator, uint8_t data, uint16_t addr)
 {
     emulator->memory.blocks[addr] = data;
@@ -316,6 +321,19 @@ static void cp_a_r(struct emulator_t *emulator)
     cpu->flags.h_flag = (((a & 0x0f) - (r & 0x0f)) < 0);
 }
 
+static void cp_a_n(struct emulator_t *emulator)
+{
+    struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
+
+    uint8_t a_reg = cpu->reg.af.high;
+    uint8_t data = read_8_bit_immediate_data_from_memory(emulator);
+
+    cpu->flags.n_flag = 1;
+    cpu->flags.c_flag = data > a_reg;
+    cpu->flags.z_flag = (a_reg == data);
+    cpu->flags.h_flag = (((a_reg & 0x0f) - (data & 0x0f)) < 0);
+}
+
 static void inc_r(struct emulator_t *emulator)
 {
     struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
@@ -342,6 +360,50 @@ static void dec_r(struct emulator_t *emulator)
     cpu->flags.n_flag = 1;
     cpu->flags.z_flag = ((r - 1) == 0);
     // cpu->flags.h_flag = (((a & 0x0f) - (r & 0x0f)) < 0);
+}
+
+static void inc_rr(struct emulator_t *emulator)
+{
+    struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
+    switch (emulator->opcode)
+    {
+        case 0x03:
+            cpu->reg.bc.data = cpu->reg.bc.data - 1;
+            break;
+        case 0x13:
+            cpu->reg.de.data = cpu->reg.de.data - 1;
+            break;
+        case 0x23:
+            cpu->reg.hl.data = cpu->reg.hl.data - 1;
+            break;
+        case 0x33:
+            cpu->reg.sp.data = cpu->reg.sp.data - 1;
+            break;
+        default:
+            break;
+    }
+}
+
+static void dec_rr(struct emulator_t *emulator)
+{
+    struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
+    switch (emulator->opcode)
+    {
+        case 0x0b:
+            cpu->reg.bc.data = cpu->reg.bc.data - 1;
+            break;
+        case 0x1b:
+            cpu->reg.de.data = cpu->reg.de.data - 1;
+            break;
+        case 0x2b:
+            cpu->reg.hl.data = cpu->reg.hl.data - 1;
+            break;
+        case 0x3b:
+            cpu->reg.sp.data = cpu->reg.sp.data - 1;
+            break;
+        default:
+            break;
+    }
 }
 
 static void rlca(struct emulator_t *emulator)
@@ -624,6 +686,77 @@ static void call_cc_nn(struct emulator_t *emulator, uint16_t addr)
     if (should_jump) call_nn(emulator, addr);
 }
 
+static void push_qq(struct emulator_t *emulator)
+{
+    struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
+    uint16_t data;
+
+    switch (emulator->opcode)
+    {
+        case 0xc5:
+            data = cpu->reg.bc.data;
+            break;
+        case 0xd5:
+            data = cpu->reg.de.data;
+            break;
+        case 0xe5:
+            data = cpu->reg.hl.data;
+            break;
+        case 0xf5:
+            data = cpu->reg.af.data;    // fix unloaded F register
+            break;
+        default:
+            exit(0);
+    }
+    write_16_bit_to_memory(emulator, data, cpu->reg.sp.data);
+    cpu->reg.sp.data = cpu->reg.sp.data - 2;
+}
+
+static void pop_qq(struct emulator_t *emulator)
+{
+    struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
+    
+    cpu->reg.sp.data = cpu->reg.sp.data + 2;
+    uint16_t data = read_16_bit_from_memory(emulator, cpu->reg.sp.data);
+    switch (emulator->opcode)
+    {
+        case 0xc1:
+            cpu->reg.bc.data = data;
+            break;
+        case 0xd1:
+            cpu->reg.de.data = data;
+            break;
+        case 0xe1:
+            cpu->reg.hl.data = data;
+            break;
+        case 0xf1:
+            cpu->reg.af.data = data; // fix unloaded F register
+            break;
+        default:
+            exit(0);
+    }
+}
+
+static void ret(struct emulator_t *emulator)
+{
+    struct cpu_core_t *cpu = (struct cpu_core_t*) &emulator->cpu;
+    cpu->reg.sp.data = cpu->reg.sp.data + 2;
+    cpu->reg.pc.data = read_16_bit_from_memory(emulator, cpu->reg.sp.data);
+}
+
+static void ret_cc(struct emulator_t *emulator)
+{
+    uint8_t should_jump = 0;
+    switch (emulator->opcode)
+    {
+        case 0xc0: should_jump = !emulator->cpu.flags.z_flag; break;
+        case 0xc8: should_jump = emulator->cpu.flags.z_flag;  break;
+        case 0xd0: should_jump = !emulator->cpu.flags.c_flag; break;
+        case 0xd8: should_jump = emulator->cpu.flags.c_flag;  break;
+    }
+    if (should_jump) ret(emulator);
+}
+
 static void emulator_initialize(struct emulator_t *emulator)
 {
     // Initialize CPU registers and flags. http://bgb.bircd.org/pandocs.htm#powerupsequence
@@ -742,14 +875,18 @@ void step_emulator(struct emulator_t *emulator)
         case 0x7f:              // LD A, r'
         case 0x78 ... 0x7d:
         case 0x40 ... 0x45:     // LD B, r'
+        case 0x47:
         case 0x48:              // LD C, r'
         case 0x49:
+        case 0x4f:
         case 0x4a ... 0x4d:
         case 0x50 ... 0x55:     // LD D, r'
+        case 0x57:
         case 0x58:              // LD E, r'
         case 0x59:
         case 0x5a ... 0x5d:
         case 0x60 ... 0x65:     // LD H, r'
+        case 0x67:
         case 0x68:              // LD L, r'
         case 0x69:
         case 0x6a ... 0x6d:
@@ -858,7 +995,10 @@ void step_emulator(struct emulator_t *emulator)
         case 0xaa ... 0xad:
             xor_a_r(emulator);
             break;
-        case 0xbf:
+        case 0xfe:  // CP a, n
+            cp_a_n(emulator);
+            break;
+        case 0xbf:  // CP a, r
         case 0xb8 ... 0xbd:
             cp_a_r(emulator);
             break;
@@ -931,21 +1071,55 @@ void step_emulator(struct emulator_t *emulator)
         case 0xcd:  // Call nn
             call_nn(emulator, read_16_bit_immediate_data_from_memory(emulator));
             break;
-        case 0xc4:
+        case 0xc4:  // Call cc, nn
         case 0xcc:
         case 0xd4:
         case 0xdc:
             call_cc_nn(emulator, read_16_bit_immediate_data_from_memory(emulator));
             break;
-        // 16 bit load instructions
-        case 0x01:
+        case 0xc9:  // RET
+            ret(emulator);
+            break;
+        case 0xc0:
+        case 0xc8:
+        case 0xd0:
+        case 0xd8:
+            ret_cc(emulator);
+            break;
+        // 16 bit transfer instructions
+        case 0x01:  // LD rr, nn
         case 0x11:
         case 0x21:
         case 0x31:
             ld_rr_nn(emulator);
             break;
+        case 0xc5:  // Push rr
+        case 0xd5:
+        case 0xe5:
+        case 0xf5:
+            push_qq(emulator);
+            break;
+        case 0xc1:  // Pop rr
+        case 0xd1:
+        case 0xe1:
+        case 0xf1:
+            pop_qq(emulator);
+            break;
         case 0xf9:
             emulator->cpu.reg.sp.data = emulator->cpu.reg.hl.data;
+            break;
+        // 16 bit atirthmetic
+        case 0x03:  // INC rr
+        case 0x13:
+        case 0x23:
+        case 0x33:
+            inc_rr(emulator);
+            break;
+        case 0x0b:  // DEC rr
+        case 0x1b:
+        case 0x2b:
+        case 0x3b:
+            dec_rr(emulator);
             break;
         default:
         {
@@ -963,68 +1137,13 @@ int main(int argc, char *argv[])
     struct emulator_t emulator;
 
     emulator_initialize(&emulator);
-
-    // emulator.memory.blocks[0]       = 0xfa;     // ld a, (nn)
-    // emulator.memory.blocks[1]       = 0x55;
-    // emulator.memory.blocks[2]       = 0x77;
-    // emulator.memory.blocks[0x7755]  = 0x1e;
-    // emulator.memory.blocks[3]       = 0x80;     // add a, b
-    // emulator.memory.blocks[4]       = 0x90;     // sub a, b
-    // emulator.memory.blocks[5]       = 0xa1;     // and a, c
-    // emulator.memory.blocks[6]       = 0xb0;     // or  a, b
-    // emulator.memory.blocks[7]       = 0xaf;     // xor a, a
-    // emulator.memory.blocks[8]       = 0x3c;     // inc a
-    // emulator.memory.blocks[9]       = 0x05;     // dec b
-    // emulator.memory.blocks[10]      = 0xb8;     // cp  a, b
-    // emulator.memory.blocks[11]      = 0x07;     // rlca
-    // emulator.memory.blocks[12]      = 0x17;     // rla
-    // emulator.memory.blocks[13]      = 0x0f;     // rrca
-    // emulator.memory.blocks[14]      = 0x1f;     // rra
-    // emulator.memory.blocks[15]      = 0xcb;     // rlc a
-    // emulator.memory.blocks[16]      = 0x07;
-    // emulator.memory.blocks[17]      = 0xcb;     // rl  a
-    // emulator.memory.blocks[18]      = 0x17;
-    // emulator.memory.blocks[19]      = 0xcb;     // rrc a
-    // emulator.memory.blocks[20]      = 0x0f;
-    // emulator.memory.blocks[21]      = 0xcb;     // rr  a
-    // emulator.memory.blocks[22]      = 0x1f;
-    // emulator.memory.blocks[23]      = 0xcb;     // sla a
-    // emulator.memory.blocks[24]      = 0x27;
-    // emulator.memory.blocks[25]      = 0xcb;     // sra a
-    // emulator.memory.blocks[26]      = 0x2f;
-    // emulator.memory.blocks[27]      = 0xcb;     // srl a
-    // emulator.memory.blocks[28]      = 0x3f;
-
-    // dum_cpu_registers(&emulator);
-
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-    // step_emulator(&emulator);
-
     dum_cpu_registers(&emulator);
     
     step_emulator(&emulator);
     step_emulator(&emulator);
     step_emulator(&emulator);
     
-    for (int k = 0; k < 0x6010; ++k)
+    for (int k = 0; ; ++k)
     {
         step_emulator(&emulator);
     }
